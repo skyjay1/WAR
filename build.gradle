@@ -2,10 +2,7 @@ plugins {
     id 'eclipse'
     id 'maven-publish'
     id 'net.minecraftforge.gradle' version '5.1.+'
-    id 'org.spongepowered.mixin' version '0.7-SNAPSHOT'
 }
-
-apply plugin: 'org.spongepowered.mixin'
 
 version = project.mod_version
 group = project.maven_group // http://maven.apache.org/guides/mini/guide-naming-conventions.html
@@ -15,9 +12,6 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 println "Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty 'java.vm.version'} (${System.getProperty 'java.vendor'}), Arch: ${System.getProperty 'os.arch'}"
 
-mixin {
-    disableAnnotationProcessorCheck()
-}
 
 minecraft {
    
@@ -37,7 +31,7 @@ minecraft {
             property 'forge.logging.console.level', 'debug'
 
             mods {
-                greekfantasy {
+                sswar {
                     source sourceSets.main
                 }
             }
@@ -50,7 +44,7 @@ minecraft {
             property 'forge.logging.console.level', 'debug'
 
             mods {
-                greekfantasy {
+                sswar {
                     source sourceSets.main
                 }
             }
@@ -63,10 +57,10 @@ minecraft {
             property 'forge.logging.console.level', 'debug'
 
             // Specify the modid for data generation, where to output the resulting resource, and where to look for existing resources.
-            args '--mod', 'greekfantasy', '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+            args '--mod', 'sswar', '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
 
             mods {
-                greekfantasy {
+                sswar {
                     source sourceSets.main
                 }
             }
@@ -75,76 +69,16 @@ minecraft {
 }
 
 repositories {
-    maven { // JEI
-        name 'mezz'
-        url 'https://dvs1.progwml6.com/files/maven'
-    }
     maven { // CURSE
         name 'CurseMaven'
         url 'https://www.cursemaven.com/'
     }
-    maven { // MODRINTH
-        url 'https://api.modrinth.com/maven'
-    }
-    maven { // CLOTH CONFIG
-        url "https://maven.shedaniel.me/"
-    }
-    maven { // CLOTH CONFIG
-        url "https://maven.terraformersmc.com/releases/"
-    }
-    maven { // PLAYERANIMATOR
-        name "KosmX's maven"
-        url "https://maven.kosmx.dev/"
-    }
 }
 
 dependencies {
-    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
-
     minecraft "net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}"
-
-    // RPG Gods
-    compileOnly fg.deobf("curse.maven:rpggods-${project.rpggods_project}:${project.rpggods_file}")
-    runtimeOnly fg.deobf("curse.maven:rpggods-${project.rpggods_project}:${project.rpggods_file}")
-
-    // JEI
-	compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
-	runtimeOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
-    // Better Combat
-    implementation fg.deobf("me.shedaniel.cloth:cloth-config-forge:${project.cloth_config_version}")
-    implementation fg.deobf("dev.kosmx.player-anim:player-animation-lib-forge:${project.player_animator_version}")
-    implementation fg.deobf("maven.modrinth:better-combat:${project.better_combat_version}-forge")
-
 }
-// This block of code expands all the gradle properties in the specified resource targets.
-// It copies them into the targets and expands all the defined properties.
-def resourceTargets = ['META-INF/mods.toml', 'pack.mcmeta']
-def intoTargets = ["$rootDir/out/production/resources/", "$rootDir/out/production/${project.name}.main/", "$rootDir/bin/main/"]
-def replaceProperties = [mod_id: mod_id, mod_name: mod_name, mod_version: mod_version,
-                         mod_authors: mod_authors, mod_description: mod_description,
-                         minecraft_version_range: minecraft_version_range, forge_version_range: forge_version_range,
-                         loader_version_range: loader_version_range]
-processResources {
-    inputs.properties replaceProperties
-    replaceProperties.put 'project', project
 
-    filesMatching(resourceTargets) {
-        expand replaceProperties
-    }
-
-    intoTargets.each { target ->
-        if (file(target).exists()) {
-            copy {
-                from(sourceSets.main.resources) {
-                    include resourceTargets
-                    expand replaceProperties
-                }
-                into target
-            }
-        }
-    }
-}
-// Example for how to get properties into the manifest for reading by the runtime..
 jar {
     manifest {
         attributes([

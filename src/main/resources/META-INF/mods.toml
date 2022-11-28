@@ -1,0 +1,19 @@
+modLoader="javafml"
+loaderVersion="[43,)"
+license="GNU LGPLv3"
+
+[[mods]]
+    modId="sswar"
+    version="19.2.0.0"
+    displayName="WAR"
+    credits=""
+    authors="skyjay1"
+    description='''Custom WAR events'''
+
+    [[dependencies.sswar]]
+        modId="forge"
+        mandatory=true
+        versionRange="[43.1,)"
+        ordering="NONE"
+        side="BOTH"
+

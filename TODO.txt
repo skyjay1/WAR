@@ -1,0 +1,119 @@
+WarSaveData (shared across all dimensions)
+-wars: Map<War UUID, War>
+-warsByState: Map<WarState, War UUID>
+-warRecruits: Map<War UUID, WarRecruit>
++loadWar(uuid: War UUID, war: War)
+
+War
+-owner: Player UUID
+-name: String
+-createdTimestamp: long
+-recruitTimestamp: long
+-prepareTimestamp: long
+-activateTimestamp: long
+-endTimestamp: long
+-state: WarState
+
+WarState
++CREATING
++RECRUITING
++PREPARING
++ACTIVE
++ENDED
++INVALID
+
+
+WarRecruit (tracks info about players who are being recruited to a potential war)
+-invitedPlayers: Map<Player UUID, WarRecruitEntry>
+-maxPlayers: int
+
+WarRecruitState
++PENDING
++ACCEPT
++REJECT
+
+WarRecruitEntry
+-timestamp: long
+-state: WarRecruitState
+
+
+WarMember capability
+-activeWar: War UUID (can be null)
+-warEndedTimestamp: long (game time of the most recently completed war for this player)
+-wins: int
+-losses: int
+
+
+TeamSaveData (shared across all dimensions)
+-teams: Map<War UUID, WarTeams>
+-playerToWarMap: Map<Player UUID, War UUID>
++loadTeam(uuid: War UUID, team: WarTeam)
++addTeam(uuid: War UUID, team: WarTeam)
++getTeam(uuid: War UUID): WarTeam
+
+WarTeams
+-teamA: WarTeam
+-teamB: WarTeam
+
+WarTeam
+-name: String
+-players: Map<Player UUID, WarTeamEntry>
+
+WarTeamEntry
+-deaths: int
+-forfeit: boolean
+
+
+WarMenu
++WarMenu(player: Player, Collection<Player> validPlayers)
+
+CStartWarPacket (sent to server by WarMenu)
+-name: String
+-teamAName: String
+-teamBName: String
+-teamA: List<Integer>
+-teamB: List<Integer>
+
+
+WarCompassMenu
++WarMenu(player: Player, compass: ItemStack, slot: int, WarTeam: team)
++WarMenu(player: Player, compass: ItemStack, slot: int, Container players)
+    - displays player heads in alphabetical order
+
+
+CWarCompassPacket (sent to server by WarCompassMenu)
+-selected: int
+
+SOpenWarCompassMenuPacket (sent to client by server when using the compass)
+
+
+WarUtils
++findValidPlayer(server: MinecraftServer, Collection<Player UUID> blacklist): Optional<ServerPlayer>
++isValidPlayer(player: Player): bool (checks if the player is not currently / was not in a war in the last 30 min [config])
++onWarRecruitExpire(uuid: War UUID, warRecruit: WarRecruit, warData: WarSaveData, teamData: TeamSaveData)
++onWarActivate(uuid: War UUID, war: War, warData: WarSaveData, teamData: TeamSaveData)
++inviteWarRecruit(player: Player, war: War, warRecruit: warRecruit, warData: WarSaveData, teamData: TeamSaveData)
+    - sends a chat message to the player that can be clicked to run the appropriate command
++updateWarCompass(player: Player, compass: ItemStack)
+    - updates the tracked position and sets the status bar with a message in the format "(Enemy|Teammate) <player> (Overworld, Y=64)"
++openWarCompassMenu(player: ServerPlayer, compass: ItemStack, slot: int): bool
++openWarMenu(player: ServerPlayer): bool
+
+
+WarCommands
+/war forfeit (alias: /war ff) - updates forfeit status for the given player while in a war
+/war stats <player> - prints win/loss history for the given player
+/war start [max_players] (opens WAR GUI. Max Players defaults to Integer.MAX_VALUE)
+/war invite <player> (invites player to current war)
+/war accept (accepts a WarRecruit if it exists for the given player)
+/war deny (denies a WarRecruit if it exists for the given player)
+/war list (prints a list of active wars and team members)
+
+
+WarConfig
+-RANDOM_WAR_INTERVAL (default 30 min)
+-PLAYER_WAR_COOLDOWN (default 30 min)
+-RECRUIT_TIMEOUT (default 2 min)
+-RECRUIT_DURATION (default 4 min)
+-PREPARATION_DURATION (default 10 min)
+-COMPASS_UNCERTAINTY_DISTANCE (default 30 blocks)
