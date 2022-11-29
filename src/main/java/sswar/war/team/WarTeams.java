@@ -1,7 +1,11 @@
 package sswar.war.team;
 
+import com.mojang.datafixers.util.Pair;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraftforge.common.util.INBTSerializable;
+
+import java.util.Optional;
+import java.util.UUID;
 
 public class WarTeams implements INBTSerializable<CompoundTag> {
 
@@ -17,6 +21,38 @@ public class WarTeams implements INBTSerializable<CompoundTag> {
 
     public WarTeams(final CompoundTag tag) {
         deserializeNBT(tag);
+    }
+
+    //// HELPER METHODS ////
+
+    /**
+     * @param player the player UUID
+     * @return the team for the given player, or empty if they are not in this war
+     */
+    public Optional<WarTeam> getTeamForPlayer(final UUID player) {
+        if(teamA.getTeam().containsKey(player)) {
+            return Optional.of(teamA);
+        }
+        if(teamB.getTeam().containsKey(player)) {
+            return Optional.of(teamB);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * @param player the player UUID
+     * @return the team and entry for the given player, or empty if they are not in this war
+     */
+    public Optional<Pair<WarTeam, WarTeamEntry>> getTeamAndEntryForPlayer(final UUID player) {
+        WarTeamEntry entry = teamA.getTeam().get(player);
+        if(entry != null) {
+            return Optional.of(new Pair<>(teamA, entry));
+        }
+        entry = teamB.getTeam().get(player);
+        if(entry != null) {
+            return Optional.of(new Pair<>(teamB, entry));
+        }
+        return Optional.empty();
     }
 
     //// GETTERS ////

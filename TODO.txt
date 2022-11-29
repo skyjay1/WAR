@@ -85,7 +85,18 @@ CWarCompassPacket (sent to server by WarCompassMenu)
 -selected: int
 
 SOpenWarCompassMenuPacket (sent to client by server when using the compass)
+-playerHeads: Container
+NOTE: add number of player deaths to the lore for each player head
 
+
+WarEvents
+ForgeHandler
++onServerTick(event: ServerTickEvent) (used to update war states and recruits)
++onPlayerTick(event: PlayerTickEvent) (used to update war compass, if any, about once per second. The compass does not need to be held or used to update.)
++onPlayerDeath(event: LivingDeathEvent) (used to keep inventory, add points, end wars, etc.)
++onPlayerAttack(event: PlayerAttackEvent) (canceled for PvP during preparation period, or friendly-fire for players on the same team)
++onPlayerSleepInBed(event: PlayerSleepInBedEvent) (sets BedSleepingProblem status when player is in a war)
+    - use OTHER_PROBLEM and send custom message to player
 
 WarUtils
 +findValidPlayer(server: MinecraftServer, Collection<Player UUID> blacklist): Optional<ServerPlayer>
@@ -103,7 +114,7 @@ WarUtils
 WarCommands
 /war forfeit (alias: /war ff) - updates forfeit status for the given player while in a war
 /war stats <player> - prints win/loss history for the given player
-/war start [max_players] (opens WAR GUI. Max Players defaults to Integer.MAX_VALUE)
+/war declare [max_players] (opens WAR GUI. Max Players defaults to Integer.MAX_VALUE)
 /war invite <player> (invites player to current war)
 /war accept (accepts a WarRecruit if it exists for the given player)
 /war deny (denies a WarRecruit if it exists for the given player)

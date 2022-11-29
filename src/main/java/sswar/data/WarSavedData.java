@@ -1,5 +1,6 @@
 package sswar.data;
 
+import com.mojang.datafixers.util.Pair;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -8,14 +9,11 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import sswar.SSWar;
 import sswar.war.War;
-import sswar.war.WarState;
 import sswar.war.recruit.WarRecruit;
-import sswar.war.team.WarTeams;
 
-import java.util.Collection;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 public class WarSavedData extends SavedData {
@@ -56,6 +54,48 @@ public class WarSavedData extends SavedData {
 
     private void loadRecruit(final UUID warId, final WarRecruit warRecruit) {
         recruits.put(warId, warRecruit);
+    }
+
+    public Pair<UUID, War> createWar(final String name, final long timestamp, final int maxPlayers) {
+        final UUID warId = getNextUUID(this);
+        War war = new War(name, timestamp);
+        WarRecruit recruit = new WarRecruit(maxPlayers);
+        // add war and recruit to maps
+        wars.put(warId, war);
+        recruits.put(warId, recruit);
+        // save data
+        setDirty();
+        return new Pair<>(warId, war);
+    }
+
+    /**
+     * @param data the saved data
+     * @return a random UUID that is not currently in use
+     */
+    private static UUID getNextUUID(final WarSavedData data) {
+        UUID uuid;
+        do {
+            uuid = UUID.randomUUID();
+        } while(data.getWars().containsKey(uuid));
+        return uuid;
+    }
+
+    //// GETTERS AND SETTERS ////
+
+    public Map<UUID, War> getWars() {
+        return wars;
+    }
+
+    public Map<UUID, WarRecruit> getRecruits() {
+        return recruits;
+    }
+
+    public Optional<War> getWar(final UUID warId) {
+        return Optional.ofNullable(wars.get(warId));
+    }
+
+    public Optional<WarRecruit> getRecruit(final UUID warId) {
+        return Optional.ofNullable(recruits.get(warId));
     }
 
     //// NBT ////

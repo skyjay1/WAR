@@ -19,9 +19,11 @@ import java.util.UUID;
 
 public class WarTeam implements INBTSerializable<CompoundTag> {
 
+    private String name;
     private Map<UUID, WarTeamEntry> team = new HashMap<>();
 
-    public WarTeam(final Collection<UUID> players) {
+    public WarTeam(final String name, final Collection<UUID> players) {
+        this.name = name;
         for(UUID uuid : players) {
             team.put(uuid, new WarTeamEntry());
         }
@@ -64,6 +66,10 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
 
     //// GETTERS AND SETTERS ////
 
+    public String getName() {
+        return name;
+    }
+
     public Map<UUID, WarTeamEntry> getTeam() {
         return team;
     }
@@ -74,6 +80,7 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
 
     //// NBT ////
 
+    private static final String KEY_NAME = "Name";
     private static final String KEY_TEAM_MAP = "Team";
     private static final String KEY_ID = "ID";
     private static final String KEY_ENTRY = "Entry";
@@ -82,6 +89,7 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
     @Override
     public CompoundTag serializeNBT() {
         CompoundTag tag = new CompoundTag();
+        tag.putString(KEY_NAME, name);
         // write map
         ListTag listTag = new ListTag();
         for(Map.Entry<UUID, WarTeamEntry> entry : team.entrySet()) {
@@ -96,6 +104,7 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
 
     @Override
     public void deserializeNBT(CompoundTag tag) {
+        this.name = tag.getString(KEY_NAME);
         this.team.clear();
         // read map
         ListTag listTag = tag.getList(KEY_TEAM_MAP, Tag.TAG_COMPOUND);

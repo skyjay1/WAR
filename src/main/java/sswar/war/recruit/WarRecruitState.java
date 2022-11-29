@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 public enum WarRecruitState implements StringRepresentable {
     PENDING((byte)0, "pending"),
     ACCEPT((byte)1, "accept"),
-    REJECT((byte)2, "reject"),
+    DENY((byte)2, "deny"),
     INVALID((byte)3, "invalid");
 
     private static final Map<Byte, WarRecruitState> ID_TO_STATE_MAP = ImmutableMap.copyOf(Arrays.stream(values())
@@ -38,7 +38,7 @@ public enum WarRecruitState implements StringRepresentable {
     }
 
     public boolean isRejected() {
-        return this == REJECT || this == INVALID;
+        return this == DENY || this == INVALID;
     }
 
     @Override

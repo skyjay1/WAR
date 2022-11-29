@@ -28,11 +28,11 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
     /**
      * Updates the recruit entry for the given player to ACCEPT
      * @param player the player
-     * @return true if there is an entry for this player
+     * @return true if there is an entry for this player and the recruit is not full
      */
     public boolean accept(final UUID player) {
         WarRecruitEntry entry = invitedPlayers.get(player);
-        if(entry != null) {
+        if(entry != null && !isFull()) {
             entry.setState(WarRecruitState.ACCEPT);
             return true;
         }
@@ -44,10 +44,10 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
      * @param player the player
      * @return true if there is an entry for this player
      */
-    public boolean reject(final UUID player) {
+    public boolean deny(final UUID player) {
         WarRecruitEntry entry = invitedPlayers.get(player);
         if(entry != null) {
-            entry.setState(WarRecruitState.REJECT);
+            entry.setState(WarRecruitState.DENY);
             return true;
         }
         return false;
@@ -71,10 +71,22 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
         return Optional.ofNullable(invitedPlayers.get(player));
     }
 
+    public boolean isFull() {
+        return getAcceptedCount() >= maxPlayers;
+    }
+
+    public int getAcceptedCount() {
+        return (int) invitedPlayers.values().stream().filter(entry -> entry.getState().isAccepted()).count();
+    }
+
     //// GETTERS AND SETTERS ////
 
     public Map<UUID, WarRecruitEntry> getInvitedPlayers() {
         return invitedPlayers;
+    }
+
+    public int getMaxPlayers() {
+        return maxPlayers;
     }
 
     //// NBT ////

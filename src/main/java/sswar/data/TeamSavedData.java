@@ -11,6 +11,7 @@ import sswar.war.team.WarTeams;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 public class TeamSavedData extends SavedData {
@@ -32,6 +33,15 @@ public class TeamSavedData extends SavedData {
     //// HELPER METHODS ////
 
 
+    //// GETTERS AND SETTERS ////
+
+    public Map<UUID, WarTeams> getTeams() {
+        return teams;
+    }
+
+    public Optional<WarTeams> getTeams(final UUID warId) {
+        return Optional.ofNullable(teams.get(warId));
+    }
 
     //// NBT ////
 
