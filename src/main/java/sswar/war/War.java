@@ -29,6 +29,7 @@ public class War implements INBTSerializable<CompoundTag> {
     public War(@Nullable UUID owner, String name, long createdTimestamp) {
         this.owner = owner;
         this.name = name;
+        this.state = WarState.CREATING;
         this.createdTimestamp = createdTimestamp;
         this.createdDate = LocalDateTime.now();
     }

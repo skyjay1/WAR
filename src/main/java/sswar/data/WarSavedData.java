@@ -11,6 +11,7 @@ import sswar.SSWar;
 import sswar.war.War;
 import sswar.war.recruit.WarRecruit;
 
+import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -22,6 +23,10 @@ public class WarSavedData extends SavedData {
 
     private Map<UUID, War> wars = new HashMap<>();
     private Map<UUID, WarRecruit> recruits = new HashMap<>();
+
+    @Nullable
+    private UUID randomWarId;
+    private long randomWarTimestamp;
 
     //// CONSTRUCTORS ////
 
@@ -48,6 +53,10 @@ public class WarSavedData extends SavedData {
 
     //// HELPER METHODS ////
 
+    public boolean hasRandomWar() {
+        return randomWarId != null;
+    }
+
     private void loadWar(final UUID warId, final War war) {
         wars.put(warId, war);
     }
@@ -66,6 +75,12 @@ public class WarSavedData extends SavedData {
         // save data
         setDirty();
         return new Pair<>(warId, war);
+    }
+
+    public void removeWar(final UUID warId) {
+        wars.remove(warId);
+        recruits.remove(warId);
+        setDirty();
     }
 
     /**
@@ -98,12 +113,35 @@ public class WarSavedData extends SavedData {
         return Optional.ofNullable(recruits.get(warId));
     }
 
+    @Nullable
+    public UUID getRandomWarId() {
+        return randomWarId;
+    }
+
+    public void setRandomWarId(final UUID randomWarId, final long timestamp) {
+        this.randomWarId = randomWarId;
+        this.randomWarTimestamp = timestamp;
+        setDirty();
+    }
+
+    public void clearRandomWar() {
+        this.randomWarId = null;
+        setDirty();
+    }
+
+    public long getRandomWarTimestamp() {
+        return randomWarTimestamp;
+    }
+
+
     //// NBT ////
 
     private static final String KEY_WAR_MAP = "WarMap";
     private static final String KEY_ID = "ID";
     private static final String KEY_WAR = "War";
     private static final String KEY_RECRUIT = "Recruit";
+    private static final String KEY_RANDOM_WAR_ID = "RandomWar";
+    private static final String KEY_RANDOM_WAR_TIMESTAMP = "RandomWarTimestamp";
 
     @Override
     public CompoundTag save(CompoundTag tag) {
@@ -123,6 +161,10 @@ public class WarSavedData extends SavedData {
             listTag.add(entryTag);
         }
         tag.put(KEY_WAR_MAP, listTag);
+        tag.putLong(KEY_RANDOM_WAR_TIMESTAMP, randomWarTimestamp);
+        if(randomWarId != null) {
+            tag.putUUID(KEY_RANDOM_WAR_ID, randomWarId);
+        }
         return tag;
     }
 
@@ -141,6 +183,10 @@ public class WarSavedData extends SavedData {
                 WarRecruit recruit = new WarRecruit(entryTag.getCompound(KEY_RECRUIT));
                 loadRecruit(warId, recruit);
             }
+        }
+        randomWarTimestamp = tag.getLong(KEY_RANDOM_WAR_TIMESTAMP);
+        if(tag.contains(KEY_RANDOM_WAR_ID)) {
+            randomWarId = tag.getUUID(KEY_RANDOM_WAR_ID);
         }
     }
 }

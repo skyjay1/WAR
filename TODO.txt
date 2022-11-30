@@ -128,3 +128,7 @@ WarConfig
 -RECRUIT_DURATION (default 4 min)
 -PREPARATION_DURATION (default 10 min)
 -COMPASS_UNCERTAINTY_DISTANCE (default 30 blocks)
+
+POTENTIAL FEATURES
+- command to change war name
+- command to change team name (who has permission to change it? vote system?)

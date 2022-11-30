@@ -22,6 +22,7 @@ import sswar.data.TeamSavedData;
 import sswar.data.WarSavedData;
 import sswar.util.MessageUtils;
 import sswar.war.War;
+import sswar.war.WarState;
 import sswar.war.recruit.WarRecruit;
 import sswar.war.recruit.WarRecruitEntry;
 import sswar.war.team.WarTeam;
@@ -83,7 +84,7 @@ public final class WarCommands {
         // start
         event.getDispatcher().register(Commands.literal(WAR)
                 .then(Commands.literal("declare")
-                        .executes(context -> declare(context.getSource(), Integer.MAX_VALUE))
+                        .executes(context -> declare(context.getSource(), WarUtils.MAX_PLAYER_COUNT))
                         .then(Commands.argument("max_players", IntegerArgumentType.integer(2))
                                 .executes(context -> declare(context.getSource(), IntegerArgumentType.getInteger(context, "max_players"))))));
     }
@@ -324,11 +325,18 @@ public final class WarCommands {
     private static Component createWarComponent(final MinecraftServer server, final UUID warId, final War war, final WarTeams warTeams) {
         final String sWarid = warId.toString();
         Component message = Component.empty();
+        // add war name
         message.getSiblings().add(MessageUtils.component("command.war.list.war", war.getName())
                 .withStyle(ChatFormatting.AQUA, ChatFormatting.UNDERLINE)
                 .withStyle(a -> a
                         .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal(sWarid)))
                         .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, sWarid))));
+        // add war state
+        if(war.getState() != WarState.ACTIVE) {
+            message.getSiblings().add(Component.literal(" "));
+            Component warState = MessageUtils.component(war.getState().getTranslationKey());
+            message.getSiblings().add(MessageUtils.component("command.war.list.state", warState.getString()).withStyle(ChatFormatting.GRAY));
+        }
         // determine date
         LocalDateTime createdDate = war.getCreatedDate();
         DateTimeFormatter formatter;

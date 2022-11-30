@@ -7,9 +7,11 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import sswar.SSWar;
+import sswar.war.team.WarTeam;
 import sswar.war.team.WarTeams;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,7 +32,19 @@ public class TeamSavedData extends SavedData {
                 .computeIfAbsent(TeamSavedData::read, TeamSavedData::new, KEY);
     }
 
-    //// HELPER METHODS ////
+    //// METHODS ////
+
+    public boolean addTeams(final UUID warId, final String nameA, final String nameB, final List<UUID> listA, final List<UUID> listB) {
+        if(teams.containsKey(warId)) {
+            return false;
+        }
+        final WarTeam teamA = new WarTeam(nameA, listA);
+        final WarTeam teamB = new WarTeam(nameB, listB);
+        final WarTeams warTeams = new WarTeams(teamA, teamB);
+        teams.put(warId, warTeams);
+        setDirty();
+        return true;
+    }
 
 
     //// GETTERS AND SETTERS ////

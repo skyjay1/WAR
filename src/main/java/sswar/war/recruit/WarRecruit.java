@@ -3,8 +3,13 @@ package sswar.war.recruit;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.util.INBTSerializable;
+import sswar.WarUtils;
+import sswar.data.WarSavedData;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -24,6 +29,44 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
     }
 
     //// METHODS ////
+
+    /**
+     * Adds a players to this war recruit and sends a recruit message
+     * @param server the server
+     * @param warData the war saved data
+     * @param uuid the player to add
+     * @param timestamp the game time
+     */
+    public void add(final MinecraftServer server, WarSavedData warData, final UUID uuid, final long timestamp) {
+        if(!invitedPlayers.containsKey(uuid)) {
+            invitedPlayers.put(uuid, new WarRecruitEntry(timestamp));
+            ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+            if(player != null) {
+                player.displayClientMessage(WarUtils.createRecruitComponent(), false);
+            }
+        }
+        warData.setDirty();
+    }
+
+    /**
+     * Adds all of the players to this war recruit and sends a recruit message
+     * @param server the server
+     * @param warData the war saved data
+     * @param players the players to add
+     * @param timestamp the game time
+     */
+    public void addAll(final MinecraftServer server, WarSavedData warData, final Collection<UUID> players, final long timestamp) {
+        for(UUID uuid : players) {
+            if(!invitedPlayers.containsKey(uuid)) {
+                invitedPlayers.put(uuid, new WarRecruitEntry(timestamp));
+                ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+                if(player != null) {
+                    player.displayClientMessage(WarUtils.createRecruitComponent(), false);
+                }
+            }
+        }
+        warData.setDirty();
+    }
 
     /**
      * Updates the recruit entry for the given player to ACCEPT
@@ -79,6 +122,10 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
         return (int) invitedPlayers.values().stream().filter(entry -> entry.getState().isAccepted()).count();
     }
 
+    public int getPendingCount() {
+        return (int) invitedPlayers.values().stream().filter(entry -> entry.getState() == WarRecruitState.PENDING).count();
+    }
+
     //// GETTERS AND SETTERS ////
 
     public Map<UUID, WarRecruitEntry> getInvitedPlayers() {
@@ -109,7 +156,7 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
         }
         tag.put(KEY_PLAYER_MAP, listTag);
         tag.putInt(KEY_MAX_PLAYERS, maxPlayers);
-        return null;
+        return tag;
     }
 
     @Override
