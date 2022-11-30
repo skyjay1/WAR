@@ -23,7 +23,7 @@ public class WarConfig {
         RECRUIT_DURATION = builder.comment("Number of seconds until the recruitment period ends")
                 .defineInRange("recruit_duration", 240, 0, 21_600);
         PREPARATION_DURATION = builder.comment("Number of minutes until the preparation period ends")
-                .defineInRange("recruit_duration", 10, 0, 21_600);
+                .defineInRange("preparation_duration", 10, 0, 21_600);
         COMPASS_UNCERTAINTY_DISTANCE = builder.comment("Minimum distance to the target (in blocks) that causes the compass to spin")
                 .defineInRange("compass_uncertainty_distance", 30, 0, 256);
         COMPASS_UPDATE_INTERVAL = builder.comment("Number of ticks between compass updates (increase to reduce lag)")

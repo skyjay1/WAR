@@ -290,10 +290,11 @@ public final class WarCommands {
     private static int declare(final CommandSourceStack context, final int maxPlayers) throws CommandSyntaxException {
         // ensure player is not currently in a war
         ServerPlayer player = context.getPlayerOrException();
-        IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
-        if(iWarMember.hasActiveWar()) {
+        if(!WarUtils.isValidPlayer(player)) {
             throw PLAYER_SELF_IS_IN_WAR.create();
         }
+        // ensure there are no pending or accepted requests for this player
+        // TODO
         // opens war GUI
         if(WarUtils.openWarMenu(player, maxPlayers)) {
             return Command.SINGLE_SUCCESS;

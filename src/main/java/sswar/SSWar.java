@@ -14,6 +14,7 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 import sswar.capability.IWarMember;
+import sswar.network.WarNetwork;
 
 @Mod(SSWar.MODID)
 public class SSWar {
@@ -37,6 +38,8 @@ public class SSWar {
             FMLJavaModLoadingContext.get().getModEventBus().register(sswar.client.WarClientEvents.ModHandler.class);
             MinecraftForge.EVENT_BUS.register(sswar.client.WarClientEvents.ForgeHandler.class);
         });
+        // register network
+        WarNetwork.register();
         // register objects
         WarRegistry.register();
 

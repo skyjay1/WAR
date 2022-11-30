@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.util.INBTSerializable;
 import sswar.WarUtils;
 import sswar.data.WarSavedData;
+import sswar.war.War;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -31,13 +32,15 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
     //// METHODS ////
 
     /**
-     * Adds a players to this war recruit and sends a recruit message
+     * Adds a player to this war recruit and sends a recruit message
      * @param server the server
      * @param warData the war saved data
      * @param uuid the player to add
      * @param timestamp the game time
      */
     public void add(final MinecraftServer server, WarSavedData warData, final UUID uuid, final long timestamp) {
+
+
         if(!invitedPlayers.containsKey(uuid)) {
             invitedPlayers.put(uuid, new WarRecruitEntry(timestamp));
             ServerPlayer player = server.getPlayerList().getPlayer(uuid);
@@ -52,13 +55,21 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
      * Adds all of the players to this war recruit and sends a recruit message
      * @param server the server
      * @param warData the war saved data
+     * @param war the war instance
      * @param players the players to add
      * @param timestamp the game time
      */
-    public void addAll(final MinecraftServer server, WarSavedData warData, final Collection<UUID> players, final long timestamp) {
+    public void addAll(final MinecraftServer server, WarSavedData warData, War war, final Collection<UUID> players, final long timestamp) {
         for(UUID uuid : players) {
             if(!invitedPlayers.containsKey(uuid)) {
-                invitedPlayers.put(uuid, new WarRecruitEntry(timestamp));
+                WarRecruitEntry entry = new WarRecruitEntry(timestamp);
+                invitedPlayers.put(uuid, entry);
+                // owner cannot change their state
+                if(war.hasOwner() && uuid.equals(war.getOwner())) {
+                    entry.setState(WarRecruitState.ACCEPT);
+                    entry.setCanChange(false);
+                    continue;
+                }
                 ServerPlayer player = server.getPlayerList().getPlayer(uuid);
                 if(player != null) {
                     player.displayClientMessage(WarUtils.createRecruitComponent(), false);
@@ -75,7 +86,7 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
      */
     public boolean accept(final UUID player) {
         WarRecruitEntry entry = invitedPlayers.get(player);
-        if(entry != null && !isFull()) {
+        if(entry != null && entry.canChange() && !isFull()) {
             entry.setState(WarRecruitState.ACCEPT);
             return true;
         }
@@ -89,7 +100,7 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
      */
     public boolean deny(final UUID player) {
         WarRecruitEntry entry = invitedPlayers.get(player);
-        if(entry != null) {
+        if(entry != null && entry.canChange()) {
             entry.setState(WarRecruitState.DENY);
             return true;
         }

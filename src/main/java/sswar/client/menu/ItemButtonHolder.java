@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.ItemStack;
+import sswar.WarUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +28,7 @@ public class ItemButtonHolder {
     protected final Container container;
     protected final Component text;
     protected final Consumer<ItemButton> onClickItem;
+    protected final Consumer<String> onEditText;
     public int x;
     public int y;
     public final int countX;
@@ -42,18 +44,11 @@ public class ItemButtonHolder {
     protected Button scrollBar; // TODO
 
     public ItemButtonHolder(final DeclareWarScreen screen, Container container, int x, int y, int countX, int countY,
-                            int editWidth, final Component text, final Supplier<ItemButtonHolder> containerTo) {
+                            int editWidth, final Component text, final Consumer<ItemButton> onClick, final Consumer<String> onEditText) {
         this.screen = screen;
         this.container = container;
-        this.onClickItem = b -> {
-            int slot = b.getSlot();
-            if(slot >= 0) {
-                ItemButtonHolder other = containerTo.get();
-                screen.getMenu().transfer(container, other.container, slot);
-                updateItemButtons();
-                other.updateItemButtons();
-            }
-        };
+        this.onClickItem = onClick;
+        this.onEditText = onEditText;
         this.x = x;
         this.y = y;
         this.countX = countX;
@@ -71,6 +66,8 @@ public class ItemButtonHolder {
         // add edit box
         editBox = screen.addEditBox(x, y, editWidth, EDIT_HEIGHT, text);
         editBox.setValue(text.getString());
+        editBox.setFilter(s -> s.matches(WarUtils.WAR_NAME_REGEX));
+        editBox.setMaxLength(24);
         // add item buttons
         this.buttons.clear();
         for(int i = 0; i < countY; i++) {
@@ -82,6 +79,10 @@ public class ItemButtonHolder {
         }
         // update all buttons
         updateItemButtons();
+    }
+
+    public void onKeyPressed() {
+        onEditText.accept(editBox.getValue());
     }
 
     public void updateItemButtons() {
@@ -98,6 +99,11 @@ public class ItemButtonHolder {
     }
 
     //// GETTERS AND SETTERS ////
+
+
+    public Container getContainer() {
+        return container;
+    }
 
     public EditBox getEditBox() {
         return editBox;

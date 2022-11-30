@@ -31,6 +31,7 @@ import sswar.war.team.WarTeam;
 import sswar.war.team.WarTeamEntry;
 import sswar.war.team.WarTeams;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -41,6 +42,12 @@ import java.util.UUID;
 public final class WarUtils {
 
     public static final int MAX_PLAYER_COUNT = 1024;
+    public static final int WAR_NAME_MAX_LENGTH = 24;
+    public static final String WAR_NAME_REGEX = "[a-zA-Z0-9_ ]{1," + WAR_NAME_MAX_LENGTH + "}";
+
+    public static final String WAR_NAME = "War";
+    public static final String TEAM_A_NAME = "Team A";
+    public static final String TEAM_B_NAME = "Team B";
 
     /**
      * Selects a random player from the server, excluding players with the given UUIDs
@@ -203,13 +210,14 @@ public final class WarUtils {
         NbtUtils.writeGameProfile(tag, profile);
         itemStack.getOrCreateTag().put(DeclareWarMenu.KEY_SKULL_OWNER, tag);
         if(required) {
-            itemStack.getTag().putBoolean(DeclareWarMenu.KEY_REQUIRED_PLAYER, true);
+            // TODO re-enable itemStack.getTag().putBoolean(DeclareWarMenu.KEY_REQUIRED_PLAYER, true);
         }
         return itemStack;
     }
 
     /**
      * Attempts to create war and war recruit objects from the given data
+     * @param owner the player who created the war, or null for server events
      * @param warName the war name
      * @param nameA the name of team A
      * @param nameB the name of team B
@@ -218,8 +226,8 @@ public final class WarUtils {
      * @param maxPlayers the maximum number of players to participate
      * @return the war ID if it was successfully created
      */
-    public static Optional<UUID> tryCreateWar(final String warName, final String nameA, final String nameB,
-                                       final List<UUID> listA, final List<UUID> listB, final int maxPlayers) {
+    public static Optional<UUID> tryCreateWar(@Nullable final UUID owner, final String warName, final String nameA, final String nameB,
+                                              final List<UUID> listA, final List<UUID> listB, final int maxPlayers) {
         final MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         if(null == server) {
             return Optional.empty();
@@ -239,12 +247,12 @@ public final class WarUtils {
         // load war data
         final WarSavedData warData = WarSavedData.get(server);
         // create war
-        final Pair<UUID, War> pair = warData.createWar(warName, gameTime, maxPlayers);
+        final Pair<UUID, War> pair = warData.createWar(owner, warName, gameTime, maxPlayers);
         // load WarRecruit
         final Optional<WarRecruit> oRecruit = warData.getRecruit(pair.getFirst());
         oRecruit.ifPresent(recruit -> {
-            recruit.addAll(server, warData, teamA, gameTime);
-            recruit.addAll(server, warData, teamB, gameTime);
+            recruit.addAll(server, warData, pair.getSecond(), teamA, gameTime);
+            recruit.addAll(server, warData, pair.getSecond(), teamB, gameTime);
             // update war state
             pair.getSecond().setState(WarState.RECRUITING);
             warData.setDirty();

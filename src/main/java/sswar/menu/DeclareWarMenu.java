@@ -4,6 +4,8 @@ import com.mojang.authlib.GameProfile;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Player;
@@ -14,11 +16,15 @@ import net.minecraft.world.level.block.PlayerHeadBlock;
 import sswar.SSWar;
 import sswar.WarRegistry;
 import sswar.WarUtils;
+import sswar.client.menu.ItemButtonHolder;
+import sswar.network.ServerBoundDeclareWarPacket;
+import sswar.network.WarNetwork;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Stack;
 import java.util.UUID;
 
 public class DeclareWarMenu extends AbstractContainerMenu {
@@ -26,7 +32,6 @@ public class DeclareWarMenu extends AbstractContainerMenu {
     public static final String KEY_VALID_PLAYER_ITEMS = "ValidPlayerItems";
     public static final String KEY_REQUIRED_PLAYER = "RequiredPlayer";
     public static final String KEY_SKULL_OWNER = "SkullOwner";
-    public static final String NAME_REGEX = "[a-zA-Z0-9_ ]{1,24}";
 
     private final Container validPlayers;
     private final SimpleContainer selectedPlayers;
@@ -46,9 +51,9 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         this.selectedPlayers = new SimpleContainer(containerSize);
         this.teamA = new SimpleContainer(containerSize);
         this.teamB = new SimpleContainer(containerSize);
-        this.warName = "War";
-        this.teamAName = "Team A";
-        this.teamBName = "Team B";
+        this.warName = WarUtils.WAR_NAME;
+        this.teamAName = WarUtils.TEAM_A_NAME;
+        this.teamBName = WarUtils.TEAM_B_NAME;
         // attempt to move required players from valid to selected
         for(int i = 0, n = this.validPlayers.getContainerSize(); i < n; i++) {
             ItemStack itemStack = this.validPlayers.getItem(i);
@@ -71,28 +76,34 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         return ItemStack.EMPTY;
     }
 
-    @Override
-    public void removed(Player player) {
-        super.removed(player);
-        if(!player.level.isClientSide()) {
-            // DEBUG
-            SSWar.LOGGER.debug("war menu closed");
-            if(!isSelectionValid() || !tryCreateWar()) {
-                // clear containers
-                selectedPlayers.clearContent();
-                teamA.clearContent();
-                teamB.clearContent();
-            }
-        }
-    }
-
     //// HELPER METHODS ////
 
-    public void transfer(final Container from, final Container to, final int slotFrom) {
+    public static int countNonEmpty(final Container container) {
+        int count = 0;
+        for(int i = 0, n = container.getContainerSize(); i < n; i++) {
+            if(!container.getItem(i).isEmpty()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public static void transfer(final ItemButtonHolder from, final ItemButtonHolder to, final int slotFrom) {
+        transfer(from.getContainer(), to.getContainer(), slotFrom);
+        from.updateItemButtons();
+        to.updateItemButtons();
+    }
+
+    public static void transfer(final Container from, final Container to, final int slotFrom) {
         if(slotFrom < 0 || slotFrom >= from.getContainerSize()) {
             return;
         }
-        ItemStack itemStack = from.removeItemNoUpdate(slotFrom);
+        ItemStack itemStack = from.getItem(slotFrom);
+        // determine if item can be removed
+        if(itemStack.hasTag() && itemStack.getTag().getBoolean(KEY_REQUIRED_PLAYER)) {
+            return;
+        }
+        from.removeItemNoUpdate(slotFrom);
         for(int i = 0, n = to.getContainerSize(); i < n; i++) {
             if(to.getItem(i).isEmpty() && to.canPlaceItem(i, itemStack)) {
                 to.setItem(i, itemStack);
@@ -100,10 +111,21 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         }
     }
 
-    public void transferAll(final Container from, final Container to) {
+    public static void transferAll(final ItemButtonHolder from, final ItemButtonHolder to) {
+        transferAll(from.getContainer(), to.getContainer());
+        from.updateItemButtons();
+        to.updateItemButtons();
+    }
+
+    public static void transferAll(final Container from, final Container to) {
         for(int i = 0, n = from.getContainerSize(); i < n; i++) {
             // remove item
-            ItemStack item = from.removeItemNoUpdate(i);
+            ItemStack item = from.getItem(i);
+            // determine if item can be removed
+            if(item.hasTag() && item.getTag().getBoolean(KEY_REQUIRED_PLAYER)) {
+                continue;
+            }
+            from.removeItemNoUpdate(i);
             // find valid slot
             for(int j = 0, m = to.getContainerSize(); j < m; j++) {
                 if(to.canPlaceItem(j, item) && to.getItem(j).isEmpty()) {
@@ -114,6 +136,17 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         }
         from.setChanged();
         to.setChanged();
+    }
+
+    public static int getRandomSlot(final Container container) {
+        int seed = Mth.floor(Math.random() * Short.MAX_VALUE);
+        for(int i = 0, n = container.getContainerSize(), slot = 0; i < n; i++) {
+            slot = (seed + i) % n;
+            if(!container.getItem(slot).isEmpty()) {
+                return slot;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -133,11 +166,10 @@ public class DeclareWarMenu extends AbstractContainerMenu {
     }
 
     /**
-     * Called when the inventory closes to attempt to create a war
-     * @return true if the war was successfully created
-     * @see WarUtils#tryCreateWar(String, String, String, List, List, int)
+     * Called when the inventory closes. Sends a packet to the server
+     * with the UUID changes (which will be verified by the server)
      */
-    private boolean tryCreateWar() {
+    public void sendPacketToServer() {
         // if there are players in the main container, randomly split into team A and B
         if(!selectedPlayers.isEmpty()) {
             randomlySplitContents(selectedPlayers, teamA, teamB);
@@ -145,8 +177,7 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         // create UUID lists from items
         final List<UUID> listA = parsePlayersFromHeads(teamA);
         final List<UUID> listB = parsePlayersFromHeads(teamB);
-        // attempt to create a war with the given players
-        return WarUtils.tryCreateWar(warName, teamAName, teamBName, listA, listB, maxPlayers).isPresent();
+        WarNetwork.CHANNEL.sendToServer(new ServerBoundDeclareWarPacket(listA, listB, warName, teamAName, teamBName));
     }
 
     /**
@@ -189,30 +220,28 @@ public class DeclareWarMenu extends AbstractContainerMenu {
      * @return true if the items were removed and shuffled successfully
      */
     public static boolean randomlySplitContents(final Container selected, final Container a, final Container b) {
-        // create list of items to split
-        final List<Integer> validSlots = new ArrayList<>();
+        // create stack of items to split
+        final Stack<ItemStack> removedItems = new Stack<>();
         for(int i = 0, n = selected.getContainerSize(); i < n; i++) {
             if(!selected.getItem(i).isEmpty()) {
-                validSlots.add(i);
+                removedItems.push(selected.removeItemNoUpdate(i));
             }
         }
-        // determine size of each team
-        int teamSize = validSlots.size() / 2;
+        // determine required size
+        int teamSize = removedItems.size() / 2;
         // check container size
         if(a.getContainerSize() < teamSize || b.getContainerSize() < teamSize) {
             return false;
         }
         // shuffle the list
-        Collections.shuffle(validSlots);
+        Collections.shuffle(removedItems);
         // assign players from selected into A and B evenly (extras go in A)
         a.clearContent();
         b.clearContent();
-        for(int i = 0, n = validSlots.size(), slot = 0; i < n; i++) {
-            slot = validSlots.remove(0);
-            a.setItem(i, selected.removeItemNoUpdate(slot));
-            if(!validSlots.isEmpty()) {
-                slot = validSlots.remove(0);
-                b.setItem(i, selected.removeItemNoUpdate(slot));
+        for(int i = 0, n = removedItems.size(); i < n; i++) {
+            a.setItem(i, removedItems.pop());
+            if(!removedItems.isEmpty()) {
+                b.setItem(i, removedItems.pop());
             }
         }
         // update containers
@@ -244,5 +273,17 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         return maxPlayers;
     }
 
+    //// SETTERS ////
 
+    public void setWarName(final String value) {
+        warName = value;
+    }
+
+    public void setTeamAName(final String value) {
+        teamAName = value;
+    }
+
+    public void setTeamBName(final String value) {
+        teamAName = value;
+    }
 }

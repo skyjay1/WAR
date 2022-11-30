@@ -80,6 +80,14 @@ public final class WarEvents {
                 updateServerWarRecruits(event.getServer(), warData);
             }
         }
+
+        @SubscribeEvent
+        public static void onPlayerLoggedIn(final PlayerEvent.PlayerLoggedInEvent event) {
+            if(event.getEntity().level.isClientSide()) {
+                return;
+            }
+            // TODO send message about pending recruit requests
+        }
     }
 
     /**
@@ -88,7 +96,7 @@ public final class WarEvents {
      * @param data the war data
      */
     private static void updateServerWarRecruits(final MinecraftServer server, final WarSavedData data) {
-
+        // TODO
     }
 
     /**
@@ -104,7 +112,7 @@ public final class WarEvents {
             Optional<War> randomWar = data.getWar(data.getRandomWarId());
             randomWar.ifPresent(war -> updateRandomWar(server, data, data.getRandomWarId(), war));
         } else if(gameTime - data.getRandomWarTimestamp() > SSWar.CONFIG.getRandomWarIntervalTicks()) {
-            Optional<UUID> warId = WarUtils.tryCreateWar("War", "Team A", "Team B", List.of(), List.of(), WarUtils.MAX_PLAYER_COUNT);
+            Optional<UUID> warId = WarUtils.tryCreateWar(null, WarUtils.WAR_NAME, WarUtils.TEAM_A_NAME, WarUtils.TEAM_B_NAME, List.of(), List.of(), WarUtils.MAX_PLAYER_COUNT);
             // update timestamp
             warId.ifPresent(uuid -> {
                 data.setRandomWarId(uuid, gameTime);

@@ -1,6 +1,7 @@
 package sswar.client.menu;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.gui.GuiComponent;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
@@ -23,6 +24,11 @@ public class ItemButton extends Button {
         // do not render empty item
         if(null == itemStack || itemStack.isEmpty()) {
             return;
+        }
+        // render selected background
+        if(isHoveredOrFocused() || (screen.hasSelected() && screen.isSelected(this))) {
+            int color = 0x88FFFFFF;
+            GuiComponent.fill(poseStack, this.x, this.y, this.x + this.width, this.y + this.height, color);
         }
         // render centered item
         int renderX = this.x + (this.width - 16) / 2;

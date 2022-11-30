@@ -26,7 +26,6 @@ public final class WarRegistry {
 
     // MENU TYPES //
 
-
     public static final RegistryObject<MenuType<DeclareWarMenu>> DECLARE_WAR_MENU = MENU_TYPES.register("declare_war", () ->
             IForgeMenuType.create((windowId, inv, data) -> {
                 // read valid player count
