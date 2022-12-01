@@ -3,6 +3,7 @@ package sswar.war;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.common.util.INBTSerializable;
+import sswar.SSWar;
 import sswar.data.WarSavedData;
 import sswar.war.recruit.WarRecruit;
 import sswar.war.team.WarTeam;
@@ -108,9 +109,19 @@ public class War implements INBTSerializable<CompoundTag> {
      */
     public static void end(final MinecraftServer server, final WarSavedData warData, final UUID warId, final War war,
                                      final WarTeam win, final WarTeam lose, final long timestamp) {
+        if(win == lose) {
+            SSWar.LOGGER.error("[War#end] Failed to end war because the winning and losing team are the same");
+            warData.invalidateWar(warId);
+            return;
+        }
+        // update win-lose
+        boolean hasReward = !war.hasOwner();
+        win.setWin(true, hasReward);
+        lose.setWin(false, hasReward);
         // update state
         war.setState(WarState.ENDED);
         war.setEndTimestamp(timestamp);
+        warData.setDirty();
         // TODO send messages to players in each team
     }
 

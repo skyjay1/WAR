@@ -4,14 +4,12 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.Container;
-import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.ItemStack;
 import sswar.WarUtils;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 public class ItemButtonHolder {
 
@@ -37,11 +35,13 @@ public class ItemButtonHolder {
     public final int width;
     public final int height;
 
+    protected boolean collapse;
+
     protected float scrollAmount; // TODO
 
     protected EditBox editBox;
     protected List<ItemButton> buttons;
-    protected Button scrollBar; // TODO
+    protected Button scrollBar;
 
     public ItemButtonHolder(final DeclareWarScreen screen, Container container, int x, int y, int countX, int countY,
                             int editWidth, final Component text, final Consumer<ItemButton> onClick, final Consumer<String> onEditText) {
@@ -58,16 +58,25 @@ public class ItemButtonHolder {
         this.height = BUTTON_HEIGHT * countY + EDIT_HEIGHT + MARGIN_Y;
         this.editWidth = Math.min(editWidth, this.width);
         this.buttons = new ArrayList<>();
+        this.collapse = false;
     }
 
     //// METHODS ////
 
     public void init() {
         // add edit box
-        editBox = screen.addEditBox(x, y, editWidth, EDIT_HEIGHT, text);
+        editBox = screen.addRenderableWidget(new EditBox(screen.getFont(), x, y, editWidth, EDIT_HEIGHT, text) {
+            @Override
+            public void setFocus(boolean isFocused) {
+                super.setFocus(isFocused);
+                if(!isFocused && getValue().isEmpty()) {
+                    setValue(text.getString());
+                }
+            }
+        });
         editBox.setValue(text.getString());
         editBox.setFilter(s -> s.matches(WarUtils.WAR_NAME_REGEX));
-        editBox.setMaxLength(24);
+        editBox.setMaxLength(WarUtils.WAR_NAME_MAX_LENGTH);
         // add item buttons
         this.buttons.clear();
         for(int i = 0; i < countY; i++) {
@@ -77,6 +86,9 @@ public class ItemButtonHolder {
                         BUTTON_WIDTH, BUTTON_HEIGHT, b -> onClickItem.accept((ItemButton) b))));
             }
         }
+        // add scroll bar
+        // TODO actually add scroll bar
+        scrollBar = screen.addRenderableWidget(new Button(this.x + BUTTON_WIDTH * countX + MARGIN_X + 1, this.y + EDIT_HEIGHT + MARGIN_Y + 1, 12, 15, Component.empty(), b -> {}));
         // update all buttons
         updateItemButtons();
     }
@@ -98,8 +110,11 @@ public class ItemButtonHolder {
         }
     }
 
-    //// GETTERS AND SETTERS ////
+    public void enableText(final boolean enableText) {
+        this.editBox.visible = enableText;
+    }
 
+    //// GETTERS AND SETTERS ////
 
     public Container getContainer() {
         return container;
@@ -115,5 +130,15 @@ public class ItemButtonHolder {
 
     public Button getScrollBar() {
         return scrollBar;
+    }
+
+    public boolean isCollapse() {
+        return collapse;
+    }
+
+    public void setCollapse(final boolean collapse) {
+        this.collapse = collapse;
+        this.buttons.forEach(b -> b.visible = !collapse);
+        this.scrollBar.visible = !collapse;
     }
 }

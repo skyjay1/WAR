@@ -11,6 +11,7 @@ import sswar.data.WarSavedData;
 import sswar.war.War;
 
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -129,12 +130,42 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
         return getAcceptedCount() >= maxPlayers;
     }
 
+    public boolean isFull(final Map<WarRecruitState, Integer> counts) {
+        return counts.getOrDefault(WarRecruitState.ACCEPT, 0) >= maxPlayers;
+    }
+
+    /**
+     * Iterates over all entries and counts any that are accepted
+     * @return the total number of accepted entries
+     * @see #getCounts()
+     */
     public int getAcceptedCount() {
         return (int) invitedPlayers.values().stream().filter(entry -> entry.getState().isAccepted()).count();
     }
 
+    /**
+     * Iterates over all entries and counts any that are pending
+     * @return the total number of pending entries
+     * @see #getCounts()
+     */
     public int getPendingCount() {
         return (int) invitedPlayers.values().stream().filter(entry -> entry.getState() == WarRecruitState.PENDING).count();
+    }
+
+    /**
+     * More efficient than counting each state separately
+     * @return map where Key=WarRecruitState and Value=Count of entries with that state
+     */
+    public Map<WarRecruitState, Integer> getCounts() {
+        final Map<WarRecruitState, Integer> counts = new EnumMap<>(WarRecruitState.class);
+        for(WarRecruitEntry entry : invitedPlayers.values()) {
+            if(counts.containsKey(entry.getState())) {
+                counts.put(entry.getState(), counts.get(entry.getState()) + 1);
+            } else {
+                counts.put(entry.getState(), 1);
+            }
+        }
+        return counts;
     }
 
     //// GETTERS AND SETTERS ////

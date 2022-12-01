@@ -31,7 +31,10 @@ import sswar.war.team.WarTeams;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -368,10 +371,27 @@ public final class WarCommands {
         Component teamName = MessageUtils.component("command.war.list.team", team.getName())
                 .withStyle(ChatFormatting.YELLOW, ChatFormatting.UNDERLINE);
         message.getSiblings().add(teamName);
+        // create player list
+        final Map<UUID, String> playerNames = team.getPlayerNames(server);
+        final List<Map.Entry<UUID, String>> sorted = new ArrayList<>();
+        sorted.addAll(playerNames.entrySet());
+        sorted.sort(Map.Entry.comparingByValue());
         // add player list
         message.getSiblings().add(Component.literal("\n" + prefix).withStyle(ChatFormatting.RESET));
-        for(String playerName : team.getSortedPlayerNames(server)) {
-            message.getSiblings().add(Component.literal(playerName));
+        for(Map.Entry<UUID, String> entry : sorted) {
+            // add player name
+            String uuidString = entry.getKey().toString();
+            message.getSiblings().add(Component.literal(entry.getValue())
+                    .withStyle(a -> a
+                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal(uuidString)))
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, uuidString))));
+            // determine number of deaths
+            Optional<WarTeamEntry> oTeamEntry = team.getEntry(entry.getKey());
+            final int deaths = oTeamEntry.isPresent() ? oTeamEntry.get().getDeathCount() : 0;
+            // add number of deaths
+            message.getSiblings().add(MessageUtils.component("command.war.list.team.deaths", deaths)
+                    .withStyle(ChatFormatting.RED)
+                    .withStyle(a -> a.withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, MessageUtils.component("command.war.list.team.deaths.tooltip", entry.getValue(), deaths)))));
             message.getSiblings().add(Component.literal(", "));
         }
         // remove trailing comma

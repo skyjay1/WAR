@@ -78,6 +78,19 @@ public class WarSavedData extends SavedData {
         return new Pair<>(warId, war);
     }
 
+    /**
+     * @param playerId the player ID
+     * @return the war ID that contains a pending recruit for this player, if any
+     */
+    public Optional<UUID> getPendingRecruitForPlayer(final UUID playerId) {
+        for(Map.Entry<UUID, WarRecruit> entry : recruits.entrySet()) {
+            if(entry.getValue().getEntry(playerId).isPresent()) {
+                return Optional.of(entry.getKey());
+            }
+        }
+        return Optional.empty();
+    }
+
     public void removeWar(final UUID warId) {
         wars.remove(warId);
         recruits.remove(warId);

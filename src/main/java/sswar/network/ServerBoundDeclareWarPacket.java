@@ -29,14 +29,17 @@ public class ServerBoundDeclareWarPacket {
     private String warName;
     private String nameA;
     private String nameB;
+    private boolean hasPrepPeriod;
     
     public ServerBoundDeclareWarPacket(final List<UUID> teamA, final List<UUID> teamB,
-                                       final String warName, final String nameA, final String nameB) {
+                                       final String warName, final String nameA, final String nameB,
+                                       final boolean hasPrepPeriod) {
         this.teamA = teamA;
         this.teamB = teamB;
         this.warName = warName;
         this.nameA = nameA;
         this.nameB = nameB;
+        this.hasPrepPeriod = hasPrepPeriod;
     }
 
     /**
@@ -48,6 +51,8 @@ public class ServerBoundDeclareWarPacket {
     public static ServerBoundDeclareWarPacket fromBytes(final FriendlyByteBuf buf) {
         // read war name
         String warName = buf.readUtf(MAX_STRING_LENGTH);
+        // read prep flag
+        boolean hasPrepPeriod = buf.readBoolean();
         // read team A
         String nameA = buf.readUtf(MAX_STRING_LENGTH);
         int sizeA = buf.readInt();
@@ -62,7 +67,7 @@ public class ServerBoundDeclareWarPacket {
         for(int i = 0; i < sizeB; i++) {
             teamB.add(buf.readUUID());
         }
-        return new ServerBoundDeclareWarPacket(teamA, teamB, warName, nameA, nameB);
+        return new ServerBoundDeclareWarPacket(teamA, teamB, warName, nameA, nameB, hasPrepPeriod);
     }
 
     /**
@@ -74,6 +79,8 @@ public class ServerBoundDeclareWarPacket {
     public static void toBytes(final ServerBoundDeclareWarPacket msg, final FriendlyByteBuf buf) {
         // write war name
         buf.writeUtf(msg.warName, MAX_STRING_LENGTH);
+        // write prep flag
+        buf.writeBoolean(msg.hasPrepPeriod);
         // write team A
         buf.writeUtf(msg.nameA, MAX_STRING_LENGTH);
         buf.writeInt(msg.teamA.size());
@@ -100,7 +107,7 @@ public class ServerBoundDeclareWarPacket {
             context.enqueueWork(() -> {
                 if(context.getSender().containerMenu instanceof DeclareWarMenu warMenu) {
                     context.getSender().closeContainer();
-                    if(WarUtils.tryCreateWar(context.getSender().getUUID(), message.warName, message.nameA, message.nameB, message.teamA, message.teamB, warMenu.getMaxPlayers()).isPresent()) {
+                    if(WarUtils.tryCreateWar(context.getSender().getUUID(), message.warName, message.nameA, message.nameB, message.teamA, message.teamB, warMenu.getMaxPlayers(), message.hasPrepPeriod).isPresent()) {
                         // send feedback
                         int totalCount = message.teamA.size() + message.teamB.size();
                         int minutesLeft = SSWar.CONFIG.RECRUIT_DURATION.get();

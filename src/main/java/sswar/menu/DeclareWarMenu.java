@@ -42,11 +42,13 @@ public class DeclareWarMenu extends AbstractContainerMenu {
     private String warName;
     private String teamAName;
     private String teamBName;
+    private boolean hasPrepPeriod;
 
     public DeclareWarMenu(int id, final Container validPlayers, final int maxPlayers) {
         super(WarRegistry.DECLARE_WAR_MENU.get(), id);
         this.validPlayers = validPlayers;
         this.maxPlayers = maxPlayers;
+        this.hasPrepPeriod = true;
         final int containerSize = Math.min(WarUtils.MAX_PLAYER_COUNT, Math.min(validPlayers.getContainerSize(), maxPlayers));
         this.selectedPlayers = new SimpleContainer(containerSize);
         this.teamA = new SimpleContainer(containerSize);
@@ -177,7 +179,7 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         // create UUID lists from items
         final List<UUID> listA = parsePlayersFromHeads(teamA);
         final List<UUID> listB = parsePlayersFromHeads(teamB);
-        WarNetwork.CHANNEL.sendToServer(new ServerBoundDeclareWarPacket(listA, listB, warName, teamAName, teamBName));
+        WarNetwork.CHANNEL.sendToServer(new ServerBoundDeclareWarPacket(listA, listB, warName, teamAName, teamBName, hasPrepPeriod));
     }
 
     /**
@@ -273,6 +275,10 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         return maxPlayers;
     }
 
+    public boolean hasPrepPeriod() {
+        return hasPrepPeriod;
+    }
+
     //// SETTERS ////
 
     public void setWarName(final String value) {
@@ -285,5 +291,9 @@ public class DeclareWarMenu extends AbstractContainerMenu {
 
     public void setTeamBName(final String value) {
         teamAName = value;
+    }
+
+    public void toggleHasPrepPeriod() {
+        this.hasPrepPeriod = !this.hasPrepPeriod;
     }
 }

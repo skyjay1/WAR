@@ -5,13 +5,14 @@ import com.mojang.datafixers.util.Pair;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.item.ItemStack;
@@ -44,11 +45,14 @@ public final class WarUtils {
 
     public static final int MAX_PLAYER_COUNT = 1024;
     public static final int WAR_NAME_MAX_LENGTH = 24;
-    public static final String WAR_NAME_REGEX = "[a-zA-Z0-9_ ]{1," + WAR_NAME_MAX_LENGTH + "}";
+    public static final String WAR_NAME_REGEX = "[a-zA-Z0-9() _-]{0," + WAR_NAME_MAX_LENGTH + "}";
 
     public static final String WAR_NAME = "War";
     public static final String TEAM_A_NAME = "Team A";
     public static final String TEAM_B_NAME = "Team B";
+
+    private static final String KEY_LOOT_TABLE = "LootTable";
+    private static final String VICTORY_LOOT_TABLE = new ResourceLocation(SSWar.MODID, "gameplay/war_victory").toString();
 
     /**
      * Selects a random player from the server, excluding players with the given UUIDs
@@ -213,6 +217,12 @@ public final class WarUtils {
         if(isWin) {
             // add stats
             iWarMember.addWin();
+            // create reward item
+            final ItemStack itemStack = Items.CHEST.getDefaultInstance();
+            itemStack.getOrCreateTag().putString(KEY_LOOT_TABLE, VICTORY_LOOT_TABLE);
+            if(!player.addItem(itemStack)) {
+                player.drop(itemStack, false);
+            }
             // TODO give item
             // TODO add fireworks
         } else {
@@ -297,31 +307,41 @@ public final class WarUtils {
      * @return true if the teams are valid
      */
     public static boolean tryBalanceTeams(final MinecraftServer server, final TeamSavedData data, final WarTeam teamA, final WarTeam teamB) {
-        // move players from team B to team A
-        if(teamA.getTeam().isEmpty()) {
-            if(teamB.getTeam().size() < 2) {
-                return false;
-            }
-            // move one random player
-            UUID player = Util.getRandom(teamB.getTeam().keySet().toArray(new UUID[0]), server.overworld().getRandom());
-            WarTeamEntry entry = teamB.getTeam().remove(player);
-            teamA.getTeam().put(player, entry);
-            data.setDirty();
-            return true;
+        int sizeA = teamA.getTeam().size();
+        int sizeB = teamB.getTeam().size();
+        // do not process teams that are too small to balance
+        if((sizeA <= 1 && sizeB == 0) || (sizeB <= 1 && sizeA == 0)) {
+            return false;
         }
-        // move players from team B to team A
-        if(teamB.getTeam().isEmpty()) {
-            if(teamA.getTeam().size() < 2) {
-                return false;
+        // prepare to balance
+        WarTeam from;
+        WarTeam to;
+        List<UUID> keySet = new ArrayList<>();
+        UUID player;
+        // move random players from one team to the other until sizes are roughly equal
+        while(sizeA > 0 && sizeB > 0 && Mth.ceil(sizeA / 2.0F) != Mth.ceil(sizeB / 2.0F)) {
+            // determine larger team
+            if (sizeA > sizeB) {
+                from = teamA;
+                to = teamB;
+            } else {
+                from = teamB;
+                to = teamA;
             }
-            // move one random player
-            UUID player = Util.getRandom(teamA.getTeam().keySet().toArray(new UUID[0]), server.overworld().getRandom());
-            WarTeamEntry entry = teamA.getTeam().remove(player);
-            teamB.getTeam().put(player, entry);
+            // add UUIDs to list
+            keySet.clear();
+            keySet.addAll(from.getTeam().keySet());
+            // determine player to move
+            player = Util.getRandom(keySet, server.overworld().getRandom());
+            // move the player
+            WarTeamEntry entry = from.getTeam().remove(player);
+            to.getTeam().put(player, entry);
             data.setDirty();
-            return true;
+            // update sizes
+            sizeA = teamA.getTeam().size();
+            sizeB = teamB.getTeam().size();
         }
-        // both teams are non-empty
+        // teams are now balanced
         return true;
     }
 
@@ -337,7 +357,7 @@ public final class WarUtils {
      * @return the war ID if it was successfully created
      */
     public static Optional<UUID> tryCreateWar(@Nullable final UUID owner, final String warName, final String nameA, final String nameB,
-                                              final List<UUID> listA, final List<UUID> listB, final int maxPlayers) {
+                                              final List<UUID> listA, final List<UUID> listB, final int maxPlayers, final boolean hasPrepPeriod) {
         final MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         if(null == server) {
             return Optional.empty();
@@ -380,16 +400,16 @@ public final class WarUtils {
     public static Component createRecruitComponent() {
         // create components
         Component feedback = Component.empty().withStyle(ChatFormatting.BOLD);
-        feedback.getSiblings().add(MessageUtils.component("message.war_recruit.prompt"));
-        Component yes = MessageUtils.component("message.war_recruit.prompt.yes")
+        feedback.getSiblings().add(MessageUtils.component("message.war.lifecycle.recruit.prompt"));
+        Component yes = MessageUtils.component("message.war.lifecycle.recruit.prompt.yes")
                 .withStyle(ChatFormatting.GREEN)
                 .withStyle(a -> a
-                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, MessageUtils.component("message.war_recruit.prompt.yes.tooltip")))
+                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, MessageUtils.component("message.war.lifecycle.recruit.prompt.yes.tooltip")))
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/war accept")));
-        Component no = MessageUtils.component("message.war_recruit.prompt.no")
+        Component no = MessageUtils.component("message.war.lifecycle.recruit.prompt.no")
                 .withStyle(ChatFormatting.RED)
                 .withStyle(a -> a
-                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, MessageUtils.component("message.war_recruit.prompt.no.tooltip")))
+                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, MessageUtils.component("message.war.lifecycle.recruit.prompt.no.tooltip")))
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/war deny")));
         // combine components
         feedback.getSiblings().add(Component.literal(" "));

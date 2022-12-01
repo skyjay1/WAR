@@ -2,6 +2,7 @@ package sswar.war.recruit;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraftforge.common.util.INBTSerializable;
+import sswar.SSWar;
 
 import java.util.Objects;
 
@@ -22,6 +23,12 @@ public class WarRecruitEntry implements INBTSerializable<CompoundTag> {
 
     public WarRecruitEntry(final CompoundTag tag) {
         deserializeNBT(tag);
+    }
+
+    //// HELPER METHODS ////
+
+    public boolean isExpired(final long gameTime) {
+        return gameTime - timestamp > SSWar.CONFIG.getRecruitTimeoutTicks();
     }
 
     //// GETTERS AND SETTERS ////

@@ -3,9 +3,10 @@ package sswar.client.menu;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.ImageButton;
 import net.minecraft.client.gui.components.Widget;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.narration.NarratableEntry;
@@ -17,18 +18,13 @@ import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import sswar.SSWar;
 import sswar.WarUtils;
 import sswar.menu.DeclareWarMenu;
-import sswar.network.ServerBoundDeclareWarPacket;
-import sswar.network.WarNetwork;
 import sswar.util.MessageUtils;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.List;
-import java.util.function.Consumer;
 
 public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMenu> {
     public static final ResourceLocation TEXTURE_SIMPLE = new ResourceLocation(SSWar.MODID, "textures/gui/declare_war_simple.png");
@@ -62,8 +58,13 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
     @Nullable
     private ItemButton selectedButton;
 
-    private Button customizeTeamsButton;
-    private List<Button> advancedButtons;
+    private Button buttonCustomize;
+    private ImageTextButton buttonCount;
+    private ImageIconButton buttonSwap;
+    private ImageIconButton buttonRemove;
+    private ImageIconButton buttonRandomize;
+
+    private Component countTooltip = Component.literal("");
 
     private int totalPlayerCount;
 
@@ -71,7 +72,6 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
         super(title);
         this.menu = menu;
         this.isSimple = true;
-        this.advancedButtons = new ArrayList<>();
         this.totalPlayerCount = 0;
     }
 
@@ -80,9 +80,6 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
         // draw background image
         RenderSystem.setShaderTexture(0, getTexture());
         this.blit(poseStack, this.leftPos, this.topPos, 0, 0, IMAGE_WIDTH, IMAGE_HEIGHT);
-        // render count
-        String sMaxPlayers = (getMenu().getMaxPlayers() == WarUtils.MAX_PLAYER_COUNT) ? "\u221E" : String.valueOf(getMenu().getMaxPlayers());
-        this.font.draw(poseStack, MessageUtils.component("gui.sswar.declare_war.invited_and_max", totalPlayerCount, sMaxPlayers), leftPos + 104, topPos + 111, 0);
         // render components
         super.render(poseStack, mouseX, mouseY, partialTicks);
     }
@@ -91,6 +88,7 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
     protected void init() {
         this.leftPos = (this.width - IMAGE_WIDTH) / 2;
         this.topPos = (this.height - 12 - IMAGE_HEIGHT) / 2;
+        getMinecraft().keyboardHandler.setSendRepeatsToGui(true);
         // create button holder for valid players
         validPlayerButtons = new ItemButtonHolder(this, menu.getValidPlayers(), this.leftPos + VALID_PLAYERS_X, this.topPos + VALID_PLAYERS_Y,
                 12, 4, 120, Component.literal(WarUtils.WAR_NAME), b -> {
@@ -117,7 +115,6 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
                 updateCount();
             }
         }, s -> getMenu().setTeamAName(s));
-        // TODO figure out how to have both Team A and Team B name edit boxes
 
         // create button holder for team A
         teamAPlayerButtons = new ItemButtonHolder(this, menu.getTeamA(), this.leftPos + TEAM_A_X, this.topPos + TEAM_A_Y,
@@ -128,16 +125,31 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
 
         // init item button holders
         validPlayerButtons.init();
+        selectedPlayerButtons.init();
+        selectedPlayerButtons.enableText(false);
+        teamAPlayerButtons.init();
+        teamBPlayerButtons.init();
         if(isSimple) {
-            selectedPlayerButtons.init();
+            teamAPlayerButtons.setCollapse(true);
+            teamBPlayerButtons.setCollapse(true);
         } else {
-            teamAPlayerButtons.init();
-            teamBPlayerButtons.init();
+            this.selectedPlayerButtons.setCollapse(true);
         }
 
         // add upper buttons
+        // toggle prep period
+        this.addRenderableWidget(new ImageIconButton(leftPos + 135, topPos + 9, 18, 18, 0, 36, 18, TEXTURE_WIDGETS, 0, 140, 11, 11,
+                b -> {
+                    getMenu().toggleHasPrepPeriod();
+                    b.setMessage(MessageUtils.component("gui.sswar.declare_war.prep_period." + (getMenu().hasPrepPeriod() ? "on" : "off")));
+                }, (b, p, mx, my) -> renderTooltip(p, b.getMessage(), mx, my), MessageUtils.component("gui.sswar.declare_war.prep_period." + (getMenu().hasPrepPeriod() ? "on" : "off"))) {
+            @Override
+            public int getIconV() {
+                return (getMenu().hasPrepPeriod() ? 0 : 16) + super.getIconV();
+            }
+        });
         // add one random
-        this.addRenderableWidget(new ImageButton(leftPos + 165, topPos + 9, 18, 18, 0, 36, 18, TEXTURE_WIDGETS, 256, 256,
+        this.addRenderableWidget(new ImageIconButton(leftPos + 183, topPos + 9, 18, 18, 0, 36, 18, TEXTURE_WIDGETS, 16, 140, 7, 7,
                 b -> {
                     ItemButtonHolder other = (isSimple ? selectedPlayerButtons : teamAPlayerButtons);
                     int slot = DeclareWarMenu.getRandomSlot(validPlayerButtons.getContainer());
@@ -147,7 +159,7 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
                     }
                 }, (b, p, mx, my) -> renderTooltip(p, b.getMessage(), mx, my), MessageUtils.component("gui.sswar.declare_war.add_one_random")));
         // add max random
-        this.addRenderableWidget(new ImageButton(leftPos + 187, topPos + 9, 18, 18, 0, 36, 18, TEXTURE_WIDGETS, 256, 256,
+        this.addRenderableWidget(new ImageIconButton(leftPos + 205, topPos + 9, 18, 18, 0, 36, 18, TEXTURE_WIDGETS, 32, 140, 15, 7,
                 b -> {
                     while(!validPlayerButtons.getContainer().isEmpty() && getCount() < getMenu().getMaxPlayers()) {
                         ItemButtonHolder other = (isSimple ? selectedPlayerButtons : teamAPlayerButtons);
@@ -159,7 +171,7 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
                     }
                 }, (b, p, mx, my) -> renderTooltip(p, b.getMessage(), mx, my), MessageUtils.component("gui.sswar.declare_war.add_max_random")));
         // reset
-        this.addRenderableWidget(new ImageButton(leftPos + 209, topPos + 9, 18, 18, 0, 36, 18, TEXTURE_WIDGETS, 256, 256,
+        this.addRenderableWidget(new ImageIconButton(leftPos + 227, topPos + 9, 18, 18, 0, 36, 18, TEXTURE_WIDGETS, 48, 140, 10, 10,
                 b -> {
                     if(isSimple) {
                         DeclareWarMenu.transferAll(selectedPlayerButtons, validPlayerButtons);
@@ -172,31 +184,36 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
                 }, (b, p, mx, my) -> renderTooltip(p, b.getMessage(), mx, my), MessageUtils.component("gui.sswar.declare_war.remove_all")));
 
         // add Customize Teams button
-        this.customizeTeamsButton = this.addRenderableWidget(new ImageButton(leftPos + 11, topPos + 203, 108, 18, 0, 0, 18, TEXTURE_WIDGETS, 256, 256,
-                b -> setSimple(false), (b, p, mx, my) -> renderTooltip(p, b.getMessage(), mx, my), MessageUtils.component("gui.sswar.declare_war.customize_teams")));
-        this.customizeTeamsButton.visible = isSimple;
+        this.buttonCustomize = this.addRenderableWidget(new ImageTextButton(leftPos + 11, topPos + 203, 108, 18, 0, 0, 18, TEXTURE_WIDGETS,
+                b -> setSimple(false), (b, p, mx, my) -> renderTooltip(p, b.getMessage(), mx, my), font, MessageUtils.component("gui.sswar.declare_war.customize_teams")));
+        this.buttonCustomize.visible = isSimple;
+
+        // add count button
+        this.buttonCount = this.addRenderableWidget(new ImageTextButton(leftPos + 110, topPos + 106, 36, 18, 110, 106, 0, getTexture(),
+                b -> {}, (b, p, mx, my) -> renderTooltip(p, getCountTooltip(), mx, my), font, Component.empty()));
 
         // add advanced buttons
-        this.advancedButtons.clear();
+        final Component noPlayerSelected = MessageUtils.component("gui.sswar.declare_war.no_player_selected").withStyle(ChatFormatting.RED);
         // swap team
-        this.advancedButtons.add(this.addRenderableWidget(new ImageButton(leftPos + 110, topPos + 147, 36, 18, 18, 36, 18, TEXTURE_WIDGETS, 256, 256,
+        this.buttonSwap = (this.addRenderableWidget(new ImageIconButton(leftPos + 110, topPos + 147, 36, 18, 18, 36, 18, TEXTURE_WIDGETS, 64, 140, 26, 14,
                 b -> {
                     if(hasSelected()) {
                         ItemButtonHolder opposite = (selectedHolder == teamAPlayerButtons) ? teamBPlayerButtons : teamAPlayerButtons;
                         DeclareWarMenu.transfer(selectedHolder, opposite, selectedButton.getSlot());
                         clearSelected();
                     }
-                }, (b, p, mx, my) -> renderTooltip(p, b.getMessage(), mx, my), MessageUtils.component("gui.sswar.declare_war.swap"))));
+                }, (b, p, mx, my) -> renderTooltip(p, hasSelected() ? b.getMessage() : noPlayerSelected, mx, my), MessageUtils.component("gui.sswar.declare_war.swap"))));
         // remove from team
-        this.advancedButtons.add(this.addRenderableWidget(new ImageButton(leftPos + 110, topPos + 169, 36, 18, 18, 36, 18, TEXTURE_WIDGETS, 256, 256,
+        this.buttonRemove = (this.addRenderableWidget(new ImageIconButton(leftPos + 110, topPos + 169, 36, 18, 18, 36, 18, TEXTURE_WIDGETS, 96, 140, 11, 11,
                 b -> {
                     if(hasSelected()) {
                         DeclareWarMenu.transfer(selectedHolder, validPlayerButtons, selectedButton.getSlot());
                         clearSelected();
+                        updateCount();
                     }
-                }, (b, p, mx, my) -> renderTooltip(p, b.getMessage(), mx, my), MessageUtils.component("gui.sswar.declare_war.remove"))));
+                }, (b, p, mx, my) -> renderTooltip(p, hasSelected() ? b.getMessage() : noPlayerSelected, mx, my), MessageUtils.component("gui.sswar.declare_war.remove"))));
         // randomize teams
-        this.advancedButtons.add(this.addRenderableWidget(new ImageButton(leftPos + 110, topPos + 199, 36, 18, 18, 36, 18, TEXTURE_WIDGETS, 256, 256,
+        this.buttonRandomize = (this.addRenderableWidget(new ImageIconButton(leftPos + 110, topPos + 199, 36, 18, 18, 36, 18, TEXTURE_WIDGETS, 112, 140, 26, 11,
                 b -> {
                     Container temp = new SimpleContainer(validPlayerButtons.getContainer().getContainerSize());
                     DeclareWarMenu.transferAll(teamAPlayerButtons.getContainer(), temp);
@@ -205,8 +222,11 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
                     teamAPlayerButtons.updateItemButtons();
                     teamBPlayerButtons.updateItemButtons();
                     clearSelected();
-                }, (b, p, mx, my) -> renderTooltip(p, b.getMessage(), mx, my), MessageUtils.component("gui.sswar.declare_war.randomize"))));
-        this.advancedButtons.forEach(b -> b.visible = !isSimple);
+                }, (b, p, mx, my) -> renderTooltip(p, getCount() > 0 ? b.getMessage() : noPlayerSelected, mx, my), MessageUtils.component("gui.sswar.declare_war.randomize"))));
+        this.buttonSwap.setEnabled(hasSelected());
+        this.buttonRemove.setEnabled(hasSelected());
+        this.buttonRandomize.setEnabled(totalPlayerCount > 0);
+        this.buttonSwap.visible = this.buttonRemove.visible = this.buttonRandomize.visible = !isSimple;
         // add Done button
         this.addRenderableWidget(new Button(this.leftPos, this.topPos + IMAGE_HEIGHT + 1, IMAGE_WIDTH, 11, getTitle(), b -> {
             //TODO re-enable if(getCount() > 1) {
@@ -214,6 +234,14 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
             //}
             onClose();
         }));
+        // update initial count
+        updateCount();
+    }
+
+    @Override
+    public void onClose() {
+        super.onClose();
+        getMinecraft().keyboardHandler.setSendRepeatsToGui(false);
     }
 
     @Override
@@ -242,8 +270,8 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
         return super.addRenderableWidget(widget);
     }
 
-    public EditBox addEditBox(int x, int y, int width, int height, Component text) {
-        return addRenderableWidget(new EditBox(font, x, y, width, height, text));
+    protected Font getFont() {
+        return font;
     }
 
     public void renderItemStackTooltip(final PoseStack poseStack, final ItemStack itemStack, final int x, final int y) {
@@ -253,10 +281,19 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
     public void setSelected(final ItemButtonHolder holder, final ItemButton button) {
         this.selectedHolder = holder;
         this.selectedButton = button;
+        if(buttonSwap != null && buttonRemove != null) {
+            this.buttonSwap.setEnabled(true);
+            this.buttonRemove.setEnabled(true);
+        }
     }
 
     public void clearSelected() {
-        setSelected(null, null);
+        this.selectedHolder = null;
+        this.selectedButton = null;
+        if(buttonSwap != null && buttonRemove != null) {
+            this.buttonSwap.setEnabled(false);
+            this.buttonRemove.setEnabled(false);
+        }
     }
 
     public boolean hasSelected() {
@@ -273,6 +310,22 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
         } else {
             totalPlayerCount = DeclareWarMenu.countNonEmpty(teamAPlayerButtons.getContainer()) + DeclareWarMenu.countNonEmpty(teamBPlayerButtons.getContainer());
         }
+        buttonRandomize.setEnabled(totalPlayerCount > 0);
+        // update count display
+        Component countMessage;
+        countTooltip.getSiblings().clear();
+        if(getMenu().getMaxPlayers() == WarUtils.MAX_PLAYER_COUNT) {
+            countMessage = (MessageUtils.component("gui.sswar.declare_war.count_and_max", totalPlayerCount, "\u221E"));
+            countTooltip = (MessageUtils.component("gui.sswar.declare_war.count.tooltip", totalPlayerCount));
+        } else {
+            countMessage = (MessageUtils.component("gui.sswar.declare_war.count_and_max", totalPlayerCount, menu.getMaxPlayers()));
+            countTooltip = (MessageUtils.component("gui.sswar.declare_war.count_and_max.tooltip", totalPlayerCount, menu.getMaxPlayers()));
+        }
+        buttonCount.setMessage(countMessage);
+    }
+
+    protected Component getCountTooltip() {
+        return countTooltip;
     }
 
     public int getCount() {
@@ -282,20 +335,20 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
     public void setSimple(final boolean isSimple) {
         this.isSimple = isSimple;
         if(isSimple) {
-            menu.transferAll(menu.getTeamA(), menu.getSelectedPlayers());
-            menu.transferAll(menu.getTeamB(), menu.getSelectedPlayers());
+            DeclareWarMenu.transferAll(menu.getTeamA(), menu.getSelectedPlayers());
+            DeclareWarMenu.transferAll(menu.getTeamB(), menu.getSelectedPlayers());
         } else {
-            menu.transferAll(menu.getSelectedPlayers(), menu.getTeamA());
+            DeclareWarMenu.transferAll(menu.getSelectedPlayers(), menu.getTeamA());
         }
         // save text fields
         String warName = validPlayerButtons.getEditBox().getValue();
-        String teamAName = selectedPlayerButtons.getEditBox().getValue();
-        // TODO team B name
+        String teamAName = teamAPlayerButtons.getEditBox().getValue();
+        String teamBName = teamBPlayerButtons.getEditBox().getValue();
         // recreate widgets
         init(getMinecraft(), width, height);
         // load text fields
         validPlayerButtons.getEditBox().setValue(warName);
         teamAPlayerButtons.getEditBox().setValue(teamAName);
-        // TODO team B name
+        teamBPlayerButtons.getEditBox().setValue(teamBName);
     }
 }

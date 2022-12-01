@@ -9,10 +9,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.common.util.INBTSerializable;
 import sswar.WarUtils;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,6 +21,7 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
     private Map<UUID, WarTeamEntry> team = new HashMap<>();
     private boolean win;
     private boolean rewarded;
+    private boolean hasReward;
 
     public WarTeam(final String name, final Collection<UUID> players) {
         this.name = name;
@@ -31,6 +30,7 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
         }
         this.win = false;
         this.rewarded = false;
+        this.hasReward = false;
     }
 
     public WarTeam(final CompoundTag tag) {
@@ -59,12 +59,11 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
         return count;
     }
 
-    public List<String> getSortedPlayerNames(final MinecraftServer server) {
-        List<String> nameList = new ArrayList<>();
+    public Map<UUID, String> getPlayerNames(final MinecraftServer server) {
+        Map<UUID, String> nameList = new HashMap<>();
         for(UUID uuid : team.keySet()) {
-            nameList.add(WarUtils.getPlayerName(server, uuid));
+            nameList.put(uuid, WarUtils.getPlayerName(server, uuid));
         }
-        nameList.sort(String::compareToIgnoreCase);
         return nameList;
     }
 
@@ -86,8 +85,9 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
         return win;
     }
 
-    public void setWin(boolean win) {
+    public void setWin(boolean win, boolean hasReward) {
         this.win = win;
+        this.hasReward = hasReward;
     }
 
     public boolean isRewarded() {
@@ -105,6 +105,7 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
     private static final String KEY_ID = "ID";
     private static final String KEY_ENTRY = "Entry";
     private static final String KEY_WIN = "Win";
+    private static final String KEY_HAS_REWARD = "HasReward";
     private static final String KEY_REWARDED = "Rewarded";
 
     @Override
@@ -112,6 +113,7 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
         CompoundTag tag = new CompoundTag();
         tag.putString(KEY_NAME, name);
         tag.putBoolean(KEY_WIN, win);
+        tag.putBoolean(KEY_HAS_REWARD, hasReward);
         tag.putBoolean(KEY_REWARDED, rewarded);
         // write map
         ListTag listTag = new ListTag();
@@ -129,6 +131,7 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
     public void deserializeNBT(CompoundTag tag) {
         this.name = tag.getString(KEY_NAME);
         this.win = tag.getBoolean(KEY_WIN);
+        this.hasReward = tag.getBoolean(KEY_HAS_REWARD);
         this.rewarded = tag.getBoolean(KEY_REWARDED);
         this.team.clear();
         // read map

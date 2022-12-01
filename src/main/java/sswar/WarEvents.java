@@ -22,14 +22,17 @@ import sswar.war.War;
 import sswar.war.WarState;
 import sswar.war.recruit.WarRecruit;
 import sswar.war.recruit.WarRecruitEntry;
+import sswar.war.recruit.WarRecruitState;
 import sswar.war.team.WarTeam;
 import sswar.war.team.WarTeamEntry;
 import sswar.war.team.WarTeams;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 
@@ -90,10 +93,17 @@ public final class WarEvents {
 
         @SubscribeEvent
         public static void onPlayerLoggedIn(final PlayerEvent.PlayerLoggedInEvent event) {
-            if(event.getEntity().level.isClientSide()) {
+            if(event.getEntity().level.isClientSide() || null == event.getEntity().getServer()) {
                 return;
             }
-            // TODO send message about pending recruit requests
+            // load war data
+            final WarSavedData warData = WarSavedData.get(event.getEntity().getServer());
+            // check for pending requests
+            Optional<UUID> oWarId = warData.getPendingRecruitForPlayer(event.getEntity().getUUID());
+            if(oWarId.isPresent()) {
+                // there is a pending request for this player, re-send the recruit message
+                event.getEntity().displayClientMessage(WarUtils.createRecruitComponent(), false);
+            }
         }
 
         @SubscribeEvent
@@ -113,12 +123,31 @@ public final class WarEvents {
     }
 
     /**
-     * Updates each war recruit in the server, then removes any war recruits that are expired
+     * Updates each war recruit in the server to expire pending requests
      * @param server the server
      * @param data the war data
      */
     private static void updateServerWarRecruits(final MinecraftServer server, final WarSavedData data) {
-        // TODO
+        for(Map.Entry<UUID, WarRecruit> entry : data.getRecruits().entrySet()) {
+            updateWarRecruit(server, data, entry.getKey(), entry.getValue());
+        }
+    }
+
+    /**
+     * Updates each request for the given war recruit instance to expire pending requests
+     * @param server the server
+     * @param data the war data
+     * @param warId the war ID
+     * @param recruit the war recruit instance
+     */
+    private static void updateWarRecruit(final MinecraftServer server, final WarSavedData data, final UUID warId, final WarRecruit recruit) {
+        final long gameTime = server.overworld().getGameTime();
+        for(Map.Entry<UUID, WarRecruitEntry> recruitEntry : recruit.getInvitedPlayers().entrySet()) {
+            if(recruitEntry.getValue().getState() == WarRecruitState.PENDING && recruitEntry.getValue().isExpired(gameTime)) {
+                recruitEntry.getValue().setState(WarRecruitState.INVALID);
+                data.setDirty();
+            }
+        }
     }
 
     /**
@@ -134,7 +163,7 @@ public final class WarEvents {
             Optional<War> randomWar = data.getWar(data.getRandomWarId());
             randomWar.ifPresent(war -> updateRandomWar(server, data, data.getRandomWarId(), war));
         } else if(gameTime - data.getRandomWarTimestamp() > SSWar.CONFIG.getRandomWarIntervalTicks()) {
-            Optional<UUID> warId = WarUtils.tryCreateWar(null, WarUtils.WAR_NAME, WarUtils.TEAM_A_NAME, WarUtils.TEAM_B_NAME, List.of(), List.of(), WarUtils.MAX_PLAYER_COUNT);
+            Optional<UUID> warId = WarUtils.tryCreateWar(null, WarUtils.WAR_NAME, WarUtils.TEAM_A_NAME, WarUtils.TEAM_B_NAME, List.of(), List.of(), WarUtils.MAX_PLAYER_COUNT, true);
             // update timestamp
             warId.ifPresent(uuid -> {
                 data.setRandomWarId(uuid, gameTime);
@@ -156,6 +185,13 @@ public final class WarEvents {
         }
     }
 
+    /**
+     * Checks if the server war event needs to invite another player
+     * @param server the server
+     * @param data the war data
+     * @param warId the war ID
+     * @param war the server war instance
+     */
     private static void updateRandomWar(final MinecraftServer server, final WarSavedData data, final UUID warId, final War war) {
         if(war.getState() == WarState.RECRUITING) {
             // load the war recruit instance
@@ -175,10 +211,6 @@ public final class WarEvents {
             // war is no longer recruiting, remove it from data
             data.clearRandomWar();
         }
-    }
-
-    private static void updateWarRecruit(final MinecraftServer server, final WarSavedData data, final UUID warId, final WarRecruit recruit) {
-        // TODO
     }
 
     private static void updateWar(final MinecraftServer server, final WarSavedData warData, final UUID warId, final War war) {
@@ -260,12 +292,12 @@ public final class WarEvents {
      */
     private static void checkAndUpdateForfeit(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
                                                   final UUID warId, final War war, final WarTeams warTeams, final long timestamp) {
+
+        // TODO The winning team will only be given a reward chest if at least one of the forfeiting team players died
+
         // check team A forfeit status
         int forfeitA = warTeams.getTeamA().countForfeits();
         if(forfeitA > warTeams.getTeamA().getTeam().size() / 2) {
-            // update win status
-            warTeams.getTeamA().setWin(false);
-            warTeams.getTeamB().setWin(true);
             // update war state
             War.end(server, warData, warId, war, warTeams.getTeamB(), warTeams.getTeamA(), timestamp);
             return;
@@ -274,9 +306,6 @@ public final class WarEvents {
         // check team B forfeit status
         int forfeitB = warTeams.getTeamB().countForfeits();
         if(forfeitB > warTeams.getTeamB().getTeam().size() / 2) {
-            // update win status
-            warTeams.getTeamA().setWin(true);
-            warTeams.getTeamB().setWin(false);
             // update war state
             War.end(server, warData, warId, war, warTeams.getTeamA(), warTeams.getTeamB(), timestamp);
             return;
@@ -295,11 +324,51 @@ public final class WarEvents {
      */
     private static void checkAndUpdateWin(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
                                               final UUID warId, final War war, final WarTeams warTeams, final long timestamp) {
-        // TODO count player deaths to see if either team wins
+        // check team A lose condition
+        if(checkLoseCondition(server, warData, teamData, warId, war, warTeams.getTeamA())) {
+            War.end(server, warData, warId, war, warTeams.getTeamB(), warTeams.getTeamA(), timestamp);
+            return;
+        }
+        // check team B lose condition
+        if(checkLoseCondition(server, warData, teamData, warId, war, warTeams.getTeamB())) {
+            War.end(server, warData, warId, war, warTeams.getTeamA(), warTeams.getTeamB(), timestamp);
+            return;
+        }
+    }
 
-
-
-
+    /**
+     * Checks if a team meets the losing conditions: all their players die at least once; or
+     * players all have at least 1 death except for one, and the one player is offline, and there is more than 1 player on the team
+     * @param server the server
+     * @param warData the war data
+     * @param teamData the team data
+     * @param warId the war ID
+     * @param war the war instance
+     * @param team the war team
+     * @return true if the given team lost
+     */
+    private static boolean checkLoseCondition(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
+                                              final UUID warId, final War war, final WarTeam team) {
+        int deathCount = team.countPlayersWithDeaths();
+        // check if all players have died at least once
+        if(deathCount >= team.getTeam().size()) {
+            return true;
+        }
+        // check if there is one player remaining
+        if(team.getTeam().size() > 1 && deathCount == team.getTeam().size() - 1) {
+            // locate the remaining player
+            for(Map.Entry<UUID, WarTeamEntry> entry : team.getTeam().entrySet()) {
+                if(entry.getValue().getDeathCount() <= 0) {
+                    // determine if player is offline
+                    ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
+                    if(null == player) {
+                        return true;
+                    }
+                }
+            }
+        }
+        // no lose condition detected
+        return false;
     }
 
     /**
