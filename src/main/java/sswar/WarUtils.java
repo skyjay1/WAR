@@ -3,6 +3,7 @@ package sswar;
 import com.mojang.authlib.GameProfile;
 import com.mojang.datafixers.util.Pair;
 import net.minecraft.ChatFormatting;
+import net.minecraft.Util;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
@@ -109,7 +110,7 @@ public final class WarUtils {
     }
 
     /**
-     * Called when a player forfeits to check if the war should end
+     * Called when a player forfeits
      * @param player the player that forfeited
      * @param teamData the war team data
      * @param teams the war teams
@@ -117,7 +118,48 @@ public final class WarUtils {
      * @param entry the player war team entry
      */
     public static void onPlayerForfeit(final ServerPlayer player, final TeamSavedData teamData, final WarTeams teams, final WarTeam team, final WarTeamEntry entry) {
-        // TODO
+        // TODO send messages to players in the same war
+    }
+
+    /**
+     * Called when a player dies to update death count
+     * @param player the player that died
+     * @param warId the ID of the active war
+     */
+    public static void onPlayerDeath(final ServerPlayer player, final UUID warId) {
+        // load war data and active war
+        final WarSavedData warData = WarSavedData.get(player.getServer());
+        final Optional<War> oWar = warData.getWar(warId);
+        if(oWar.isEmpty()) {
+            return;
+        }
+        final War war = oWar.get();
+        // verify war is active
+        if(war.getState() != WarState.ACTIVE) {
+            return;
+        }
+        // load war teams
+        final TeamSavedData teamData = TeamSavedData.get(player.getServer());
+        final Optional<WarTeams> oTeams = teamData.getTeams(warId);
+        if(oTeams.isEmpty()) {
+            warData.invalidateWar(warId);
+            return;
+        }
+        final WarTeams teams = oTeams.get();
+        // load player team
+        final Optional<WarTeam> oTeam = teams.getTeamForPlayer(player.getUUID());
+        if(oTeam.isEmpty()) {
+            return;
+        }
+        final WarTeam team = oTeam.get();
+        // load player entry
+        final Optional<WarTeamEntry> oEntry = team.getEntry(player.getUUID());
+        if(oEntry.isEmpty()) {
+            return;
+        }
+        // add death count
+        oEntry.get().addDeath();
+        teamData.setDirty();
     }
 
 
@@ -153,7 +195,33 @@ public final class WarUtils {
         // TODO filter teams by players who accepted recruit request
     }
 
-
+    /**
+     * Loads the player if they are online and updates stats and items
+     * @param server the server
+     * @param playerId the player
+     * @param isWin true if the player wins
+     * @return true if the player was rewarded
+     */
+    public static boolean reward(final MinecraftServer server, final UUID playerId, final boolean isWin) {
+        // load the player
+        final ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+        if(null == player) {
+            return false;
+        }
+        // load capability
+        IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
+        if(isWin) {
+            // add stats
+            iWarMember.addWin();
+            // TODO give item
+            // TODO add fireworks
+        } else {
+            // add stats
+            iWarMember.addLoss();
+        }
+        // reward was successful
+        return true;
+    }
 
     /**
      * @param server the server
@@ -203,6 +271,11 @@ public final class WarUtils {
     }
 
 
+    /**
+     * @param player the player
+     * @param required true if the player is marked as required
+     * @return an ItemStack with a player head for the given player
+     */
     public static ItemStack createPlayerHead(final ServerPlayer player, final boolean required) {
         ItemStack itemStack = Items.PLAYER_HEAD.getDefaultInstance();
         GameProfile profile = player.getGameProfile();
@@ -213,6 +286,43 @@ public final class WarUtils {
             // TODO re-enable itemStack.getTag().putBoolean(DeclareWarMenu.KEY_REQUIRED_PLAYER, true);
         }
         return itemStack;
+    }
+
+    /**
+     * Checks if either team is empty switches player teams until they are both non-empty
+     * @param server the server
+     * @param data the team data
+     * @param teamA the first team
+     * @param teamB the second team
+     * @return true if the teams are valid
+     */
+    public static boolean tryBalanceTeams(final MinecraftServer server, final TeamSavedData data, final WarTeam teamA, final WarTeam teamB) {
+        // move players from team B to team A
+        if(teamA.getTeam().isEmpty()) {
+            if(teamB.getTeam().size() < 2) {
+                return false;
+            }
+            // move one random player
+            UUID player = Util.getRandom(teamB.getTeam().keySet().toArray(new UUID[0]), server.overworld().getRandom());
+            WarTeamEntry entry = teamB.getTeam().remove(player);
+            teamA.getTeam().put(player, entry);
+            data.setDirty();
+            return true;
+        }
+        // move players from team B to team A
+        if(teamB.getTeam().isEmpty()) {
+            if(teamA.getTeam().size() < 2) {
+                return false;
+            }
+            // move one random player
+            UUID player = Util.getRandom(teamA.getTeam().keySet().toArray(new UUID[0]), server.overworld().getRandom());
+            WarTeamEntry entry = teamA.getTeam().remove(player);
+            teamB.getTeam().put(player, entry);
+            data.setDirty();
+            return true;
+        }
+        // both teams are non-empty
+        return true;
     }
 
     /**

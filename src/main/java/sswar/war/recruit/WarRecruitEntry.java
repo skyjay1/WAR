@@ -7,6 +7,8 @@ import java.util.Objects;
 
 public class WarRecruitEntry implements INBTSerializable<CompoundTag> {
 
+    public static final WarRecruitEntry EMPTY = new WarRecruitEntry(0);
+
     private long timestamp;
     private WarRecruitState state;
     private boolean canChange;

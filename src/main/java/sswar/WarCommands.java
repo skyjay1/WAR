@@ -352,11 +352,13 @@ public final class WarCommands {
         message.getSiblings().add(Component.literal("\n").withStyle(ChatFormatting.RESET));
         message.getSiblings().add(MessageUtils.component("command.war.list.start", formatter.format(createdDate)));
         // add team A
-        message.getSiblings().add(Component.literal("\n"));
-        message.getSiblings().add(createTeamComponent(server, warTeams.getTeamA(), "  "));
-        // add team B
-        message.getSiblings().add(Component.literal("\n"));
-        message.getSiblings().add(createTeamComponent(server, warTeams.getTeamB(), "  "));
+        if(war.getState() != WarState.CREATING && war.getState() != WarState.RECRUITING) {
+            message.getSiblings().add(Component.literal("\n"));
+            message.getSiblings().add(createTeamComponent(server, warTeams.getTeamA(), "  "));
+            // add team B
+            message.getSiblings().add(Component.literal("\n"));
+            message.getSiblings().add(createTeamComponent(server, warTeams.getTeamB(), "  "));
+        }
         return message;
     }
 

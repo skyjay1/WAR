@@ -4,8 +4,11 @@ import com.mojang.datafixers.util.Pair;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraftforge.common.util.INBTSerializable;
 
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 public class WarTeams implements INBTSerializable<CompoundTag> {
 
@@ -53,6 +56,31 @@ public class WarTeams implements INBTSerializable<CompoundTag> {
             return Optional.of(new Pair<>(teamB, entry));
         }
         return Optional.empty();
+    }
+
+    /**
+     * Removes players that do not match the filter
+     * @param filter a predicate for players to keep
+     */
+    public void filterTeams(final Predicate<UUID> filter) {
+        final Set<UUID> toRemove = new HashSet<>();
+        // determine team A members to remove
+        for(UUID uuid : teamA.getTeam().keySet()) {
+            if(!filter.test(uuid)) {
+                toRemove.add(uuid);
+            }
+        }
+        // remove from team A
+        toRemove.forEach(uuid -> teamA.getTeam().remove(uuid));
+        // determine team B members to remove
+        toRemove.clear();
+        for(UUID uuid : teamB.getTeam().keySet()) {
+            if(!filter.test(uuid)) {
+                toRemove.add(uuid);
+            }
+        }
+        // remove from team B
+        toRemove.forEach(uuid -> teamB.getTeam().remove(uuid));
     }
 
     //// GETTERS ////

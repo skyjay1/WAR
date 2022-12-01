@@ -2,6 +2,7 @@ package sswar;
 
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -10,14 +11,20 @@ import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.event.AttachCapabilitiesEvent;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import sswar.capability.IWarMember;
 import sswar.capability.WarMember;
+import sswar.data.TeamSavedData;
 import sswar.data.WarSavedData;
 import sswar.war.War;
 import sswar.war.WarState;
 import sswar.war.recruit.WarRecruit;
+import sswar.war.recruit.WarRecruitEntry;
+import sswar.war.team.WarTeam;
+import sswar.war.team.WarTeamEntry;
+import sswar.war.team.WarTeams;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -87,6 +94,21 @@ public final class WarEvents {
                 return;
             }
             // TODO send message about pending recruit requests
+        }
+
+        @SubscribeEvent
+        public static void onPlayerDeath(final LivingDeathEvent event) {
+            if(event.getEntity().level.isClientSide()) {
+                return;
+            }
+            // check if a player died
+            if(event.getEntity() instanceof ServerPlayer player) {
+                IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
+                if(iWarMember.hasActiveWar()) {
+                    // update death count
+                    WarUtils.onPlayerDeath(player, iWarMember.getActiveWar());
+                }
+            }
         }
     }
 
@@ -159,28 +181,170 @@ public final class WarEvents {
         // TODO
     }
 
-    private static void updateWar(final MinecraftServer server, final WarSavedData data, final UUID warId, final War war) {
-
-        switch (war.getState()) {
+    private static void updateWar(final MinecraftServer server, final WarSavedData warData, final UUID warId, final War war) {
+        final long gameTime = server.getLevel(Level.OVERWORLD).getGameTime();
+        // load recruit instance
+        final Optional<WarRecruit> oRecruit = warData.getRecruit(warId);
+        // load war teams instance
+        final TeamSavedData teamData = TeamSavedData.get(server);
+        final Optional<WarTeams> oTeams = teamData.getTeams(warId);
+        if(oTeams.isEmpty()) {
+            warData.invalidateWar(warId);
+            return;
+        }
+        WarTeams teams = oTeams.get();
+        // update war based on current state
+        final WarState state = war.getState();
+        switch (state) {
             case CREATING:
-                // TODO check if created timestamp is more than 10 minutes and invalidate war
+                // check if created timestamp is more than 10 minutes
+                // this will only happen if the server somehow failed to start recruiting
+                if(gameTime - war.getCreatedTimestamp() > 12_000) {
+                    warData.invalidateWar(warId);
+                }
                 break;
             case RECRUITING:
-                // TODO check failed recruitment
-                // TODO check successful recruitment
+                // check for recruiting timer expire
+                if(gameTime - war.getCreatedTimestamp() > SSWar.CONFIG.getRecruitDurationTicks()) {
+                    if(oRecruit.isPresent()) {
+                        final WarRecruit recruit = oRecruit.get();
+                        // filter teams by players who accepted recruit invites
+                        teams.filterTeams(uuid -> recruit.getEntry(uuid).orElse(WarRecruitEntry.EMPTY).getState().isAccepted());
+                        // save changes
+                        teamData.setDirty();
+                        // ensure teams are balanced
+                        if(WarUtils.tryBalanceTeams(server, teamData, teams.getTeamA(), teams.getTeamB())) {
+                            // begin preparing
+                            War.startPreparing(server, warData, warId, war, teams, gameTime);
+                        } else {
+                            // cancel recruiting
+                            War.cancelRecruiting(server, warData, warId, war, teams, recruit);
+                        }
+                    }
+                    // remove war recruit instance
+                    warData.removeWarRecruit(warId);
+                }
                 break;
             case PREPARING:
-                // TODO check for preparation timer expire
-                // TODO check for forfeit conditions
+                // check for preparation timer expire
+                if(gameTime - war.getPrepareTimestamp() > SSWar.CONFIG.getPreparationDurationTicks()) {
+                    // begin activate
+                    War.startActivate(server, warData, warId, war, teams, gameTime);
+                }
+                // check forfeit conditions
+                checkAndUpdateForfeit(server, warData, teamData, warId, war, teams, gameTime);
                 break;
             case ACTIVE:
-                // TODO check win conditions and forfeit conditions
+                // check forfeit conditions
+                checkAndUpdateForfeit(server, warData, teamData, warId, war, teams, gameTime);
+                // check win conditions
+                checkAndUpdateWin(server, warData, teamData, warId, war, teams, gameTime);
                 break;
             case ENDED:
-                // TODO check for online player to give reward
+                updateReward(server, warData, teamData, warId, war, teams);
                 break;
             case INVALID: default:
                 break;
         }
     }
+
+    /**
+     * Checks and updates forfeit status if more than half of one team forfeit
+     * @param server the server
+     * @param warData the war data
+     * @param teamData the team data
+     * @param warId the war ID
+     * @param war the war instance
+     * @param warTeams the war teams instance
+     * @param timestamp the game time
+     */
+    private static void checkAndUpdateForfeit(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
+                                                  final UUID warId, final War war, final WarTeams warTeams, final long timestamp) {
+        // check team A forfeit status
+        int forfeitA = warTeams.getTeamA().countForfeits();
+        if(forfeitA > warTeams.getTeamA().getTeam().size() / 2) {
+            // update win status
+            warTeams.getTeamA().setWin(false);
+            warTeams.getTeamB().setWin(true);
+            // update war state
+            War.end(server, warData, warId, war, warTeams.getTeamB(), warTeams.getTeamA(), timestamp);
+            return;
+        }
+
+        // check team B forfeit status
+        int forfeitB = warTeams.getTeamB().countForfeits();
+        if(forfeitB > warTeams.getTeamB().getTeam().size() / 2) {
+            // update win status
+            warTeams.getTeamA().setWin(true);
+            warTeams.getTeamB().setWin(false);
+            // update war state
+            War.end(server, warData, warId, war, warTeams.getTeamA(), warTeams.getTeamB(), timestamp);
+            return;
+        }
+    }
+
+    /**
+     * Checks and updates win status if all players on one team have died at least once
+     * @param server the server
+     * @param warData the war data
+     * @param teamData the team data
+     * @param warId the war ID
+     * @param war the war instance
+     * @param warTeams the war teams instance
+     * @param timestamp the game time
+     */
+    private static void checkAndUpdateWin(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
+                                              final UUID warId, final War war, final WarTeams warTeams, final long timestamp) {
+        // TODO count player deaths to see if either team wins
+
+
+
+
+    }
+
+    /**
+     * Checks and updates win status if all players on one team have died at least once
+     * @param server the server
+     * @param warData the war data
+     * @param teamData the team data
+     * @param warId the war ID
+     * @param war the war instance
+     * @param warTeams the war teams instance
+     */
+    private static void updateReward(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
+                                     final UUID warId, final War war, final WarTeams warTeams) {
+        int rewardCount = 0;
+        // reward all players in team A
+        boolean isWinA = warTeams.getTeamA().isWin();
+        for(Map.Entry<UUID, WarTeamEntry> entry : warTeams.getTeamA().getTeam().entrySet()) {
+            // add reward
+            if(!entry.getValue().isRewarded() && WarUtils.reward(server, entry.getKey(), isWinA)) {
+                entry.getValue().setRewarded(true);
+                teamData.setDirty();
+            }
+            // update reward count
+            if(entry.getValue().isRewarded()) {
+                rewardCount++;
+            }
+        }
+        // reward all players in team B
+        boolean isWinB = warTeams.getTeamB().isWin();
+        for(Map.Entry<UUID, WarTeamEntry> entry : warTeams.getTeamB().getTeam().entrySet()) {
+            // add reward
+            if(!entry.getValue().isRewarded() && WarUtils.reward(server, entry.getKey(), isWinB)) {
+                entry.getValue().setRewarded(true);
+                teamData.setDirty();
+            }
+            // update reward count
+            if(entry.getValue().isRewarded()) {
+                rewardCount++;
+            }
+        }
+        // remove war once all players have been rewarded
+        if(rewardCount >= warTeams.getTeamA().getTeam().size() + warTeams.getTeamB().getTeam().size()) {
+            warData.invalidateWar(warId);
+        }
+    }
+
+
 }

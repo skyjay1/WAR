@@ -21,12 +21,16 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
 
     private String name;
     private Map<UUID, WarTeamEntry> team = new HashMap<>();
+    private boolean win;
+    private boolean rewarded;
 
     public WarTeam(final String name, final Collection<UUID> players) {
         this.name = name;
         for(UUID uuid : players) {
             team.put(uuid, new WarTeamEntry());
         }
+        this.win = false;
+        this.rewarded = false;
     }
 
     public WarTeam(final CompoundTag tag) {
@@ -78,18 +82,37 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
         return Optional.ofNullable(team.get(player));
     }
 
+    public boolean isWin() {
+        return win;
+    }
+
+    public void setWin(boolean win) {
+        this.win = win;
+    }
+
+    public boolean isRewarded() {
+        return rewarded;
+    }
+
+    public void setRewarded(boolean rewarded) {
+        this.rewarded = rewarded;
+    }
+
     //// NBT ////
 
     private static final String KEY_NAME = "Name";
     private static final String KEY_TEAM_MAP = "Team";
     private static final String KEY_ID = "ID";
     private static final String KEY_ENTRY = "Entry";
-
+    private static final String KEY_WIN = "Win";
+    private static final String KEY_REWARDED = "Rewarded";
 
     @Override
     public CompoundTag serializeNBT() {
         CompoundTag tag = new CompoundTag();
         tag.putString(KEY_NAME, name);
+        tag.putBoolean(KEY_WIN, win);
+        tag.putBoolean(KEY_REWARDED, rewarded);
         // write map
         ListTag listTag = new ListTag();
         for(Map.Entry<UUID, WarTeamEntry> entry : team.entrySet()) {
@@ -105,6 +128,8 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
     @Override
     public void deserializeNBT(CompoundTag tag) {
         this.name = tag.getString(KEY_NAME);
+        this.win = tag.getBoolean(KEY_WIN);
+        this.rewarded = tag.getBoolean(KEY_REWARDED);
         this.team.clear();
         // read map
         ListTag listTag = tag.getList(KEY_TEAM_MAP, Tag.TAG_COMPOUND);

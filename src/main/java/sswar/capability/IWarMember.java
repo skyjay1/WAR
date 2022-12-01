@@ -51,6 +51,14 @@ public interface IWarMember extends INBTSerializable<CompoundTag> {
 
     //// HELPER METHODS ////
 
+    default void addWin() {
+        setWins(getWins() + 1);
+    }
+
+    default void addLoss() {
+        setLosses(getLosses() + 1);
+    }
+
     default boolean hasActiveWar() {
         return getActiveWar() != null;
     }

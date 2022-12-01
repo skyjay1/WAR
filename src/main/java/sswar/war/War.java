@@ -1,7 +1,12 @@
 package sswar.war;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.common.util.INBTSerializable;
+import sswar.data.WarSavedData;
+import sswar.war.recruit.WarRecruit;
+import sswar.war.team.WarTeam;
+import sswar.war.team.WarTeams;
 
 import javax.annotation.Nullable;
 import java.time.LocalDateTime;
@@ -38,6 +43,75 @@ public class War implements INBTSerializable<CompoundTag> {
 
     public boolean hasOwner() {
         return owner != null;
+    }
+
+    /**
+     * Called when a war failed recruiting to update state and send messages
+     * @param server the server
+     * @param warData the war data
+     * @param warId the war ID
+     * @param war the war instance
+     * @param teams the war teams
+     * @param recruit the war recruit instance
+     */
+    public static void cancelRecruiting(final MinecraftServer server, final WarSavedData warData, final UUID warId, final War war, final WarTeams teams, final WarRecruit recruit) {
+        // update state
+        warData.invalidateWar(warId);
+        // TODO send messages to all players who were recruited, regardless of status
+    }
+
+    /**
+     * Called when a war successfully finishes recruiting to update state and send messages
+     * @param server the server
+     * @param warData the war data
+     * @param warId the war ID
+     * @param war the war instance
+     * @param teams the war teams
+     * @param timestamp the game time
+     */
+    public static void startPreparing(final MinecraftServer server, final WarSavedData warData, final UUID warId, final War war,
+                                      final WarTeams teams, final long timestamp) {
+        // update state and timestamp
+        war.setState(WarState.PREPARING);
+        war.setPrepareTimestamp(timestamp);
+        warData.setDirty();
+        // TODO send messages to players in each team
+    }
+
+    /**
+     * Called when a war finishes preparing to update state and send messages
+     * @param server the server
+     * @param warData the war data
+     * @param warId the war ID
+     * @param war the war instance
+     * @param teams the war teams
+     * @param timestamp the game time
+     */
+    public static void startActivate(final MinecraftServer server, final WarSavedData warData, final UUID warId, final War war,
+                                      final WarTeams teams, final long timestamp) {
+        // update state and timestamp
+        war.setState(WarState.ACTIVE);
+        war.setPrepareTimestamp(timestamp);
+        warData.setDirty();
+        // TODO send messages to players in each team
+    }
+
+    /**
+     * Called when a war ends to update state and send messages
+     * @param server the server
+     * @param warData the war data
+     * @param warId the war ID
+     * @param war the war instance
+     * @param win the winning team
+     * @param lose the losing team
+     * @param timestamp the game time
+     */
+    public static void end(final MinecraftServer server, final WarSavedData warData, final UUID warId, final War war,
+                                     final WarTeam win, final WarTeam lose, final long timestamp) {
+        // update state
+        war.setState(WarState.ENDED);
+        war.setEndTimestamp(timestamp);
+        // TODO send messages to players in each team
     }
 
     //// GETTERS AND SETTERS ////

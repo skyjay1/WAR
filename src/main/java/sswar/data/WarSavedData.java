@@ -9,6 +9,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import sswar.SSWar;
 import sswar.war.War;
+import sswar.war.WarState;
 import sswar.war.recruit.WarRecruit;
 
 import javax.annotation.Nullable;
@@ -81,6 +82,19 @@ public class WarSavedData extends SavedData {
         wars.remove(warId);
         recruits.remove(warId);
         setDirty();
+    }
+
+    public void removeWarRecruit(final UUID warId) {
+        recruits.remove(warId);
+        setDirty();
+    }
+
+    public void invalidateWar(final UUID warId) {
+        War war = wars.get(warId);
+        if(war != null) {
+            war.setState(WarState.INVALID);
+            setDirty();
+        }
     }
 
     /**
