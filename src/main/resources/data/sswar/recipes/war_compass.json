@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " # ",
+    "#X#",
+    " # "
+  ],
+  "key": {
+    "#": { "tag": "minecraft:logs" },
+    "X": { "item": "minecraft:wooden_sword" }
+  },
+  "result": {
+    "item": "minecraft:compass",
+    "count": 1,
+    "nbt": "{LodestoneDimension: {}, LodestoneTracked: 0b, WarCompass: 1b, LodestonePos: {X: 0, Y: 0, Z: 0}, display: {Lore: ['{\"translate\":\"item.sswar.war_compass.status_bar\",\"with\":[\"-\",\"-\",\"-\"]}', '{\"translate\":\"item.sswar.war_compass.tooltip.description\"}'], Name: '{\"translate\":\"item.sswar.war_compass\"}'}}"
+  }
+}

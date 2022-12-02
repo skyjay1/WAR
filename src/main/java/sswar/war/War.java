@@ -1,10 +1,16 @@
 package sswar.war;
 
+import com.google.common.collect.Iterables;
+import net.minecraft.ChatFormatting;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.util.INBTSerializable;
 import sswar.SSWar;
+import sswar.WarUtils;
 import sswar.data.WarSavedData;
+import sswar.util.MessageUtils;
 import sswar.war.recruit.WarRecruit;
 import sswar.war.team.WarTeam;
 import sswar.war.team.WarTeams;
@@ -58,7 +64,14 @@ public class War implements INBTSerializable<CompoundTag> {
     public static void cancelRecruiting(final MinecraftServer server, final WarSavedData warData, final UUID warId, final War war, final WarTeams teams, final WarRecruit recruit) {
         // update state
         warData.invalidateWar(warId);
-        // TODO send messages to all players who were recruited, regardless of status
+        // send messages to all players who were recruited, regardless of status
+        Component message = MessageUtils.component("message.war.lifecycle.recruit.cancel").withStyle(ChatFormatting.RED);
+        for(UUID playerId : recruit.getInvitedPlayers().keySet()) {
+            ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+            if(player != null) {
+                player.displayClientMessage(message, false);
+            }
+        }
     }
 
     /**
@@ -76,7 +89,32 @@ public class War implements INBTSerializable<CompoundTag> {
         war.setState(WarState.PREPARING);
         war.setPrepareTimestamp(timestamp);
         warData.setDirty();
-        // TODO send messages to players in each team
+        // send messages to players in each team
+        for(WarTeam team : teams) {
+            // create message
+            Component message = Component.empty();
+            message.getSiblings().add(MessageUtils.component("message.war.lifecycle.start_preparation").withStyle(ChatFormatting.YELLOW));
+            message.getSiblings().add(Component.literal(" "));
+            message.getSiblings().add(MessageUtils.component("message.war.lifecycle.start_preparation.team_name", team.getName()).withStyle(ChatFormatting.GOLD, ChatFormatting.UNDERLINE));
+            message.getSiblings().add(Component.literal(" "));
+            // create team members component
+            Component playerNames = Component.empty();
+            for(String name : team.getPlayerNames(server).values()) {
+                playerNames.getSiblings().add(Component.literal(name));
+                playerNames.getSiblings().add(Component.literal(", "));
+            }
+            // remove trailing comma
+            playerNames.getSiblings().remove(playerNames.getSiblings().size() - 1);
+            // add team members component
+            message.getSiblings().add(MessageUtils.component("message.war.lifecycle.start_preparation.team_members", playerNames.getString()));
+            // send message to each player
+            for(UUID playerId : team) {
+                ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+                if(player != null) {
+                    player.displayClientMessage(message, false);
+                }
+            }
+        }
     }
 
     /**
@@ -94,7 +132,16 @@ public class War implements INBTSerializable<CompoundTag> {
         war.setState(WarState.ACTIVE);
         war.setPrepareTimestamp(timestamp);
         warData.setDirty();
-        // TODO send messages to players in each team
+        // send messages to players in each team
+        Component message = MessageUtils.component("message.war.lifecycle.activate").withStyle(ChatFormatting.YELLOW);
+        for(WarTeam team : teams) {
+            for(UUID playerId : team) {
+                ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+                if(player != null) {
+                    player.displayClientMessage(message, false);
+                }
+            }
+        }
     }
 
     /**
@@ -108,21 +155,30 @@ public class War implements INBTSerializable<CompoundTag> {
      * @param timestamp the game time
      */
     public static void end(final MinecraftServer server, final WarSavedData warData, final UUID warId, final War war,
-                                     final WarTeam win, final WarTeam lose, final long timestamp) {
+                                     final WarTeam win, final WarTeam lose, final boolean wasForfeit, final long timestamp) {
         if(win == lose) {
             SSWar.LOGGER.error("[War#end] Failed to end war because the winning and losing team are the same");
             warData.invalidateWar(warId);
             return;
         }
+        // determine whether to give reward
+        boolean hasReward = !war.hasOwner() && !(wasForfeit && lose.countPlayersWithDeaths() <= 0);
         // update win-lose
-        boolean hasReward = !war.hasOwner();
         win.setWin(true, hasReward);
         lose.setWin(false, hasReward);
         // update state
         war.setState(WarState.ENDED);
         war.setEndTimestamp(timestamp);
         warData.setDirty();
-        // TODO send messages to players in each team
+        // send messages to players in each team
+        Component message = (wasForfeit ? MessageUtils.component("message.war.lifecycle.end.forfeit", lose.getName(), win.getName()) : MessageUtils.component("message.war.lifecycle.end.win", win.getName()))
+                .withStyle(ChatFormatting.YELLOW);
+        for(UUID playerId : Iterables.concat(win.getTeam().keySet(), lose.getTeam().keySet())) {
+            ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+            if(player != null) {
+                player.displayClientMessage(message, false);
+            }
+        }
     }
 
     //// GETTERS AND SETTERS ////

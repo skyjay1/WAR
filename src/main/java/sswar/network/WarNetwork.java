@@ -16,5 +16,7 @@ public final class WarNetwork {
     public static void register() {
         int index = 0;
         CHANNEL.registerMessage(index++, ServerBoundDeclareWarPacket.class, ServerBoundDeclareWarPacket::toBytes, ServerBoundDeclareWarPacket::fromBytes, ServerBoundDeclareWarPacket::handlePacket, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(index++, ServerBoundWarCompassPacket.class, ServerBoundWarCompassPacket::toBytes, ServerBoundWarCompassPacket::fromBytes, ServerBoundWarCompassPacket::handlePacket, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+
     }
 }

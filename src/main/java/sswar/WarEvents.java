@@ -3,8 +3,10 @@ package sswar;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.common.capabilities.RegisterCapabilitiesEvent;
 import net.minecraftforge.common.util.LazyOptional;
@@ -12,12 +14,18 @@ import net.minecraftforge.event.AttachCapabilitiesEvent;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
+import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.entity.player.PlayerSleepInBedEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import sswar.capability.IWarMember;
 import sswar.capability.WarMember;
 import sswar.data.TeamSavedData;
 import sswar.data.WarSavedData;
+import sswar.util.MessageUtils;
 import sswar.war.War;
 import sswar.war.WarState;
 import sswar.war.recruit.WarRecruit;
@@ -106,6 +114,10 @@ public final class WarEvents {
             }
         }
 
+        /**
+         * Updates death counts when a player dies during an active war
+         * @param event the death event
+         */
         @SubscribeEvent
         public static void onPlayerDeath(final LivingDeathEvent event) {
             if(event.getEntity().level.isClientSide()) {
@@ -118,6 +130,99 @@ public final class WarEvents {
                     // update death count
                     WarUtils.onPlayerDeath(player, iWarMember.getActiveWar());
                 }
+            }
+        }
+
+        @SubscribeEvent
+        public static void onPlayerTick(final TickEvent.PlayerTickEvent event) {
+            if(event.player.level.isClientSide() || !(event.player instanceof ServerPlayer)) {
+                return;
+            }
+            if(event.phase != TickEvent.Phase.END) {
+                return;
+            }
+            if(event.player.tickCount < 2 || event.player.tickCount % 20 != 0) {
+                return;
+            }
+            // load active war and check if war still exists
+            Optional<IWarMember> oWarMember = event.player.getCapability(SSWar.WAR_MEMBER).resolve();
+            oWarMember.ifPresent(c -> {
+                if(c.hasActiveWar()) {
+                    // load war data
+                    final WarSavedData data = WarSavedData.get(event.player.getServer());
+                    final Optional<War> oWar = data.getWar(c.getActiveWar());
+                    // check for invalid war
+                    if(oWar.isEmpty() || oWar.get().getState() == WarState.INVALID) {
+                        c.clearActiveWar();
+                    }
+                }
+            });
+            // check inventory for war compass
+            WarUtils.tryUpdateWarCompass((ServerPlayer) event.player);
+        }
+
+        /**
+         * Prevents friendly fire while a war is active
+         * @param event the living hurt event
+         */
+        @SubscribeEvent
+        public static void onPlayerHurt(final LivingHurtEvent event) {
+            if(event.getEntity().level.isClientSide()) {
+                return;
+            }
+            if(!(event.getEntity() instanceof ServerPlayer)) {
+                return;
+            }
+            if(!(event.getSource().getEntity() instanceof ServerPlayer)) {
+                return;
+            }
+            final ServerPlayer player = (ServerPlayer) event.getEntity();
+            final ServerPlayer source = (ServerPlayer) event.getSource().getEntity();
+            // check if player is in a war
+            IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
+            if(!iWarMember.hasActiveWar()) {
+                return;
+            }
+            // load team data
+            final TeamSavedData teamData = TeamSavedData.get(player.getServer());
+            Optional<WarTeams> oTeams = teamData.getTeams(iWarMember.getActiveWar());
+            if(oTeams.isEmpty()) {
+                return;
+            }
+            // check if players are not on the same team
+            final Optional<WarTeam> oPlayerTeam = oTeams.get().getTeamForPlayer(player.getUUID());
+            if(oPlayerTeam.isEmpty() || oPlayerTeam.get().getEntry(source.getUUID()).isEmpty()) {
+                return;
+            }
+            // all checks passed, cancel damage event
+            event.setCanceled(true);
+        }
+
+        @SubscribeEvent
+        public static void onPlayerSleepInBed(final PlayerSleepInBedEvent event) {
+            if(event.getEntity().level.isClientSide()) {
+                return;
+            }
+            // check if player has active war
+            IWarMember iWarMember = event.getEntity().getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
+            if(iWarMember.hasActiveWar()) {
+                // set result
+                event.setResult(Player.BedSleepingProblem.OTHER_PROBLEM);
+                // send message
+                event.getEntity().displayClientMessage(MessageUtils.component("block.minecraft.bed.active_war"), true);
+            }
+        }
+
+        @SubscribeEvent(priority = EventPriority.LOW)
+        public static void onPlayerUseItem(PlayerInteractEvent.RightClickItem event) {
+            if(event.getEntity().level.isClientSide() || !(event.getEntity() instanceof ServerPlayer)) {
+                return;
+            }
+            // attempt to open compass menu
+            if(WarUtils.isWarCompass(event.getItemStack()) && WarUtils.openWarCompassMenu((ServerPlayer) event.getEntity(), event.getItemStack())) {
+                // consume the event
+                event.setCancellationResult(InteractionResult.SUCCESS);
+                event.setCanceled(true);
             }
         }
     }
@@ -267,12 +372,17 @@ public final class WarEvents {
                 checkAndUpdateForfeit(server, warData, teamData, warId, war, teams, gameTime);
                 break;
             case ACTIVE:
+                // check all participating players have this war set as their active war
+                checkAndUpdateActiveFlags(server, warData, teamData, warId, war, teams, gameTime);
                 // check forfeit conditions
                 checkAndUpdateForfeit(server, warData, teamData, warId, war, teams, gameTime);
                 // check win conditions
                 checkAndUpdateWin(server, warData, teamData, warId, war, teams, gameTime);
                 break;
             case ENDED:
+                // check all participating players have this war set as their active war
+                checkAndUpdateActiveFlags(server, warData, teamData, warId, war, teams, gameTime);
+                // load all participating players to update reward status
                 updateReward(server, warData, teamData, warId, war, teams);
                 break;
             case INVALID: default:
@@ -281,7 +391,39 @@ public final class WarEvents {
     }
 
     /**
-     * Checks and updates forfeit status if more than half of one team forfeit
+     * Checks and updates active war flags for all participating players
+     * @param server the server
+     * @param warData the war data
+     * @param teamData the team data
+     * @param warId the war ID
+     * @param war the war instance
+     * @param warTeams the war teams instance
+     * @param timestamp the game time
+     */
+    private static void checkAndUpdateActiveFlags(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
+                                              final UUID warId, final War war, final WarTeams warTeams, final long timestamp) {
+        // send messages to players in each team
+        for(WarTeam team : warTeams) {
+            for(UUID playerId : team) {
+                // locate player if they are online
+                ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+                if(player != null) {
+                    // update war flags
+                    player.getCapability(SSWar.WAR_MEMBER).ifPresent(c -> {
+                        if(war.getState() == WarState.ACTIVE) {
+                            c.setActiveWar(warId);
+                        } else if(war.getState() == WarState.ENDED) {
+                            c.setWarEndedTimestamp(war.getEndTimestamp());
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    /**
+     * Checks and updates forfeit status if more than half of one team forfeit.
+     * The winning team will only be given a reward chest if at least one of the forfeiting team players died.
      * @param server the server
      * @param warData the war data
      * @param teamData the team data
@@ -292,14 +434,11 @@ public final class WarEvents {
      */
     private static void checkAndUpdateForfeit(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
                                                   final UUID warId, final War war, final WarTeams warTeams, final long timestamp) {
-
-        // TODO The winning team will only be given a reward chest if at least one of the forfeiting team players died
-
         // check team A forfeit status
         int forfeitA = warTeams.getTeamA().countForfeits();
         if(forfeitA > warTeams.getTeamA().getTeam().size() / 2) {
             // update war state
-            War.end(server, warData, warId, war, warTeams.getTeamB(), warTeams.getTeamA(), timestamp);
+            War.end(server, warData, warId, war, warTeams.getTeamB(), warTeams.getTeamA(), true, timestamp);
             return;
         }
 
@@ -307,7 +446,7 @@ public final class WarEvents {
         int forfeitB = warTeams.getTeamB().countForfeits();
         if(forfeitB > warTeams.getTeamB().getTeam().size() / 2) {
             // update war state
-            War.end(server, warData, warId, war, warTeams.getTeamA(), warTeams.getTeamB(), timestamp);
+            War.end(server, warData, warId, war, warTeams.getTeamA(), warTeams.getTeamB(), true, timestamp);
             return;
         }
     }
@@ -326,12 +465,12 @@ public final class WarEvents {
                                               final UUID warId, final War war, final WarTeams warTeams, final long timestamp) {
         // check team A lose condition
         if(checkLoseCondition(server, warData, teamData, warId, war, warTeams.getTeamA())) {
-            War.end(server, warData, warId, war, warTeams.getTeamB(), warTeams.getTeamA(), timestamp);
+            War.end(server, warData, warId, war, warTeams.getTeamB(), warTeams.getTeamA(), false, timestamp);
             return;
         }
         // check team B lose condition
         if(checkLoseCondition(server, warData, teamData, warId, war, warTeams.getTeamB())) {
-            War.end(server, warData, warId, war, warTeams.getTeamA(), warTeams.getTeamB(), timestamp);
+            War.end(server, warData, warId, war, warTeams.getTeamA(), warTeams.getTeamB(), false, timestamp);
             return;
         }
     }

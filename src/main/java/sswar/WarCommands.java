@@ -50,6 +50,12 @@ public final class WarCommands {
 
     public static void register(final RegisterCommandsEvent event) {
 
+        // debug
+        // TODO remove for release
+        event.getDispatcher().register(Commands.literal(WAR)
+                .then(Commands.literal("debug")
+                        .executes(context -> debugCommand(context.getSource()))));
+
         // accept
         event.getDispatcher().register(Commands.literal(WAR)
                 .then(Commands.literal("accept")
@@ -84,12 +90,19 @@ public final class WarCommands {
                         .then(Commands.argument("targets", EntityArgument.players())
                                 .executes(context -> stats(context.getSource(), EntityArgument.getPlayers(context, "targets"))))));
 
-        // start
+        // declare
         event.getDispatcher().register(Commands.literal(WAR)
                 .then(Commands.literal("declare")
                         .executes(context -> declare(context.getSource(), WarUtils.MAX_PLAYER_COUNT))
                         .then(Commands.argument("max_players", IntegerArgumentType.integer(2))
                                 .executes(context -> declare(context.getSource(), IntegerArgumentType.getInteger(context, "max_players"))))));
+    }
+
+    private static int debugCommand(final CommandSourceStack context) {
+        // TODO remove for release
+        WarUtils.reward(context.getServer(), context.getPlayer().getUUID(), true);
+        context.getPlayer().getInventory().add(WarUtils.makeWarCompass());
+        return Command.SINGLE_SUCCESS;
     }
 
     private static int accept(final CommandSourceStack context) throws CommandSyntaxException {

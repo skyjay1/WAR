@@ -15,6 +15,7 @@ import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 import sswar.menu.DeclareWarMenu;
+import sswar.menu.WarCompassMenu;
 
 public final class WarRegistry {
 
@@ -39,5 +40,18 @@ public final class WarRegistry {
                 final SimpleContainer validPlayerItems = new SimpleContainer(validPlayerCount);
                 validPlayerItems.fromTag(listTag);
                 return new DeclareWarMenu(windowId, validPlayerItems, maxPlayerCount);
+            }));
+
+    public static final RegistryObject<MenuType<WarCompassMenu>> WAR_COMPASS_MENU = MENU_TYPES.register("war_compass", () ->
+            IForgeMenuType.create((windowId, inv, data) -> {
+                // read valid player count
+                final int validPlayerCount = data.readInt();
+                // read NBT tag that contains list of items
+                final CompoundTag nbt = data.readNbt();
+                final ListTag listTag = nbt.getList(DeclareWarMenu.KEY_VALID_PLAYER_ITEMS, Tag.TAG_COMPOUND);
+                // create Container from list
+                final SimpleContainer validPlayerItems = new SimpleContainer(validPlayerCount);
+                validPlayerItems.fromTag(listTag);
+                return new WarCompassMenu(windowId, validPlayerItems);
             }));
 }

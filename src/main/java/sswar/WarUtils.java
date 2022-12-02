@@ -4,20 +4,30 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.datafixers.util.Pair;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.entity.projectile.FireworkRocketEntity;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.FireworkRocketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkHooks;
 import net.minecraftforge.server.ServerLifecycleHooks;
 import sswar.capability.IWarMember;
@@ -25,6 +35,7 @@ import sswar.capability.WarMember;
 import sswar.data.TeamSavedData;
 import sswar.data.WarSavedData;
 import sswar.menu.DeclareWarMenu;
+import sswar.menu.WarCompassMenu;
 import sswar.util.MessageUtils;
 import sswar.war.War;
 import sswar.war.WarState;
@@ -35,11 +46,14 @@ import sswar.war.team.WarTeams;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public final class WarUtils {
 
@@ -51,8 +65,12 @@ public final class WarUtils {
     public static final String TEAM_A_NAME = "Team A";
     public static final String TEAM_B_NAME = "Team B";
 
+    private static final String KEY_BLOCK_ENTITY_TAG = "BlockEntityTag";
     private static final String KEY_LOOT_TABLE = "LootTable";
     private static final String VICTORY_LOOT_TABLE = new ResourceLocation(SSWar.MODID, "gameplay/war_victory").toString();
+    private static final String KEY_WAR_COMPASS = "WarCompass";
+    private static final String KEY_TARGET = "Target";
+    private static final String KEY_TARGET_FRIENDLY = "Friendly";
 
     /**
      * Selects a random player from the server, excluding players with the given UUIDs
@@ -122,7 +140,18 @@ public final class WarUtils {
      * @param entry the player war team entry
      */
     public static void onPlayerForfeit(final ServerPlayer player, final TeamSavedData teamData, final WarTeams teams, final WarTeam team, final WarTeamEntry entry) {
-        // TODO send messages to players in the same war
+        // create message
+        final int remainingForfeits = team.getTeam().size() / 2 - team.countForfeits();
+        Component message = MessageUtils.component("message.war.event.forfeit", player.getDisplayName().getString(), remainingForfeits, team.getName()).withStyle(ChatFormatting.YELLOW);
+        // end messages to players in the same war
+        for(WarTeam t : teams) {
+            for(UUID playerId : t) {
+                ServerPlayer p = player.getServer().getPlayerList().getPlayer(playerId);
+                if(p != null) {
+                    p.displayClientMessage(message, false);
+                }
+            }
+        }
     }
 
     /**
@@ -174,7 +203,8 @@ public final class WarUtils {
             if(war.hasOwner()) {
                 ServerPlayer owner = player.getServer().getPlayerList().getPlayer(war.getOwner());
                 if(owner != null) {
-                    MessageUtils.sendMessage(owner, "command.war.accept.feedback", player.getDisplayName().getString());
+                    owner.displayClientMessage(MessageUtils.component("command.war.accept.feedback", player.getDisplayName().getString())
+                            .withStyle(ChatFormatting.GREEN), false);
                 }
             }
         });
@@ -187,16 +217,11 @@ public final class WarUtils {
             if(war.hasOwner()) {
                 ServerPlayer owner = player.getServer().getPlayerList().getPlayer(war.getOwner());
                 if(owner != null) {
-                    MessageUtils.sendMessage(owner, "command.war.deny.feedback", player.getDisplayName().getString());
+                    owner.displayClientMessage(MessageUtils.component("command.war.deny.feedback", player.getDisplayName().getString())
+                            .withStyle(ChatFormatting.RED), false);
                 }
             }
         });
-    }
-
-    public static void onRecruitExpire(final MinecraftServer server, final WarSavedData data, final UUID warId, final WarRecruit recruit) {
-        // TODO if unsuccessful: remove war and recruit from data; send messages to invited players about cancellation
-        // TODO if successful: update war state, send messages to participating players
-        // TODO filter teams by players who accepted recruit request
     }
 
     /**
@@ -219,18 +244,47 @@ public final class WarUtils {
             iWarMember.addWin();
             // create reward item
             final ItemStack itemStack = Items.CHEST.getDefaultInstance();
-            itemStack.getOrCreateTag().putString(KEY_LOOT_TABLE, VICTORY_LOOT_TABLE);
+            CompoundTag blockEntityTag = new CompoundTag();
+            blockEntityTag.putString(KEY_LOOT_TABLE, VICTORY_LOOT_TABLE);
+            itemStack.getOrCreateTag().put(KEY_BLOCK_ENTITY_TAG, blockEntityTag);
+            itemStack.setHoverName(MessageUtils.component("item.sswar.victory_chest").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD));
             if(!player.addItem(itemStack)) {
                 player.drop(itemStack, false);
             }
-            // TODO give item
-            // TODO add fireworks
+            // add firework particles
+            sendFireworks(player);
         } else {
             // add stats
             iWarMember.addLoss();
         }
         // reward was successful
         return true;
+    }
+
+    private static void sendFireworks(final ServerPlayer player) {
+        // create itemstack
+        final ItemStack rocket = Items.FIREWORK_ROCKET.getDefaultInstance();
+        // create firework compound tag
+        CompoundTag rocketTag = new CompoundTag();
+        rocketTag.putByte("Flight", (byte)1);
+        ListTag explosions = new ListTag();
+        explosions.add(createExplosionTag(FireworkRocketItem.Shape.LARGE_BALL, DyeColor.LIME));
+        explosions.add(createExplosionTag(FireworkRocketItem.Shape.SMALL_BALL, DyeColor.YELLOW));
+        rocketTag.put("Explosions", explosions);
+        rocket.getOrCreateTag().put("Fireworks", rocketTag);
+        // this method would spawn cosmetic-only firework particles, but only works client-side
+        // instead, we have to create an entity to spawn the fireworks
+        // player.level.createFireworks(player.getX(), player.getY() + 2.0D, player.getZ(), 0, 0, 0, tag);
+        // spawn firework entity
+        FireworkRocketEntity entity = new FireworkRocketEntity(player.level, player, player.getX(), player.getY() + 1.0D, player.getZ(), rocket);
+        player.level.addFreshEntity(entity);
+    }
+
+    private static CompoundTag createExplosionTag(final FireworkRocketItem.Shape shape, final DyeColor color) {
+        CompoundTag explosion = new CompoundTag();
+        explosion.putByte("Type", (byte) shape.getId());
+        explosion.putIntArray("Colors", List.of(color.getFireworkColor()));
+        return explosion;
     }
 
     /**
@@ -246,14 +300,68 @@ public final class WarUtils {
         return player.toString();
     }
 
-    public static boolean openWarCompassMenu(final ServerPlayer player, final ItemStack compass, final int slot) {
-        // TODO
-        return false;
+    public static boolean openWarCompassMenu(final ServerPlayer player, final ItemStack compass) {
+        // verify player is in war
+        IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
+        if(!iWarMember.hasActiveWar()) {
+            return false;
+        }
+        // load team
+        TeamSavedData teamData = TeamSavedData.get(player.getServer());
+        Optional<WarTeams> oTeams = teamData.getTeams(iWarMember.getActiveWar());
+        if(oTeams.isEmpty()) {
+            return false;
+        }
+        // load player and enemy team
+        WarTeam playerTeam;
+        WarTeam enemyTeam;
+        if(oTeams.get().getTeamA().getTeam().containsKey(player.getUUID())) {
+            playerTeam = oTeams.get().getTeamA();
+            enemyTeam = oTeams.get().getTeamB();
+        } else if(oTeams.get().getTeamB().getTeam().containsKey(player.getUUID())) {
+            playerTeam = oTeams.get().getTeamB();
+            enemyTeam = oTeams.get().getTeamA();
+        } else {
+            return false;
+        }
+        // create list of players to track
+        List<UUID> playerList = new ArrayList<>();
+        if(player.isShiftKeyDown()) {
+            playerList.addAll(playerTeam.getTeam().keySet());
+            playerList.remove(player.getUUID());
+        } else {
+            playerList.addAll(enemyTeam.getTeam().keySet());
+        }
+        // create list of online players
+        final List<ServerPlayer> validPlayers = new ArrayList<>();
+        for(UUID playerId : playerList) {
+            ServerPlayer serverPlayer = player.getServer().getPlayerList().getPlayer(playerId);
+            if(serverPlayer != null) {
+                validPlayers.add(serverPlayer);
+            }
+        }
+        // send message if there are no online players
+        if(validPlayers.isEmpty()) {
+            player.displayClientMessage(MessageUtils.component("item.sswar.war_compass.use.no_players").withStyle(ChatFormatting.RED), false);
+            return false;
+        }
+        // create container with player heads
+        final SimpleContainer playerHeads = createPlayerHeads(player, validPlayers, true);
+        // open menu
+        NetworkHooks.openScreen(player, new SimpleMenuProvider((id, inventory, p) ->
+                        new WarCompassMenu(id, playerHeads), MessageUtils.component("gui.sswar.war_compass")),
+                buf -> {
+                    buf.writeInt(playerHeads.getContainerSize());
+                    CompoundTag tag = new CompoundTag();
+                    tag.put(DeclareWarMenu.KEY_VALID_PLAYER_ITEMS, playerHeads.createTag());
+                    buf.writeNbt(tag);
+                });
+        return true;
     }
 
     public static boolean openWarMenu(final ServerPlayer player, final int maxPlayers) {
         // create container with player heads
-        final SimpleContainer playerHeads = createPlayerHeads(player, listValidPlayers(player.getServer(), List.of(player.getUUID())));
+        final SimpleContainer playerHeads = createPlayerHeads(player, listValidPlayers(player.getServer(), List.of(player.getUUID())), false);
         // open menu
         NetworkHooks.openScreen(player, new SimpleMenuProvider((id, inventory, p) ->
                         new DeclareWarMenu(id, playerHeads, maxPlayers), MessageUtils.component("gui.sswar.declare_war")),
@@ -267,16 +375,112 @@ public final class WarUtils {
         return true;
     }
 
+    public static boolean isWarCompass(final ItemStack itemStack) {
+        return itemStack.is(Items.COMPASS) && itemStack.hasTag() && itemStack.getTag().getBoolean(KEY_WAR_COMPASS);
+    }
 
-    public static SimpleContainer createPlayerHeads(final ServerPlayer required, final List<ServerPlayer> validPlayers) {
+    /**
+     * Checks the player inventory for a war compass and updates the first one found
+     * @param player the player
+     */
+    public static void tryUpdateWarCompass(final ServerPlayer player) {
+        for(int i = 0, n = player.getInventory().getContainerSize(); i < n; i++) {
+            ItemStack itemStack = player.getInventory().getItem(i);
+            if(isWarCompass(itemStack)) {
+                updateWarCompass(player, itemStack);
+                return;
+            }
+        }
+    }
+
+    public static void updateWarCompassTarget(final ServerPlayer player, final ServerPlayer target) {
+        ItemStack compass = player.getItemInHand(player.getUsedItemHand());
+        if(isWarCompass(compass)) {
+            compass.getTag().putUUID(KEY_TARGET, target.getUUID());
+            updateWarCompass(player, compass);
+        }
+    }
+
+    public static ItemStack makeWarCompass() {
+        ItemStack itemStack = Items.COMPASS.getDefaultInstance();
+        CompoundTag tag = itemStack.getOrCreateTag();
+        // add tag data
+        tag.putBoolean(KEY_WAR_COMPASS, true);
+        tag.putBoolean("LodestoneTracked", false);
+        tag.put("LodestonePos", NbtUtils.writeBlockPos(BlockPos.ZERO));
+        tag.put("LodestoneDimension", new CompoundTag());
+        // add display name
+        itemStack.setHoverName(MessageUtils.component("item.sswar.war_compass"));
+        CompoundTag display = itemStack.getOrCreateTagElement("display");
+        ListTag lore = new ListTag();
+        lore.add(StringTag.valueOf(Component.Serializer.toJson(MessageUtils.component("item.sswar.war_compass.status_bar", "-", "-", "-"))));
+        lore.add(StringTag.valueOf(Component.Serializer.toJson(MessageUtils.component("item.sswar.war_compass.tooltip.description"))));
+        display.put("Lore", lore);
+        return itemStack;
+    }
+
+    private static void updateWarCompass(final ServerPlayer player, final ItemStack compass) {
+        // update name and lore
+        // determine if this is a war compass
+        if(!compass.hasTag() || !compass.getTag().contains(KEY_TARGET)) {
+            return;
+        }
+        // determine if player is in war
+        IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
+        if(!iWarMember.hasActiveWar()) {
+            // remove target from tag
+            compass.getTag().remove(KEY_TARGET);
+            // update tag
+            compass.getTag().put("LodestonePos", NbtUtils.writeBlockPos(player.blockPosition()));
+            compass.getTag().put("LodestoneDimension", new CompoundTag());
+        }
+        // determine if target is online
+        final UUID targetId = compass.getTag().getUUID(KEY_TARGET);
+        final ServerPlayer target = player.getServer().getPlayerList().getPlayer(targetId);
+        if(null == target) {
+            // target is offline, do nothing
+            return;
+        }
+        // target is online, determine location
+        final ResourceKey<Level> targetLevel = target.level.dimension();
+        final BlockPos targetPos = target.blockPosition();
+        final boolean friendly = compass.getTag().getBoolean(KEY_TARGET_FRIENDLY);
+        // determine whether to track target
+        boolean tracked = targetLevel.equals(player.level.dimension()) && (friendly || !player.blockPosition().closerThan(targetPos, SSWar.CONFIG.COMPASS_UNCERTAINTY_DISTANCE.get()));
+        if(tracked) {
+            // update tag
+            compass.getTag().put("LodestonePos", NbtUtils.writeBlockPos(targetPos));
+            Level.RESOURCE_KEY_CODEC.encodeStart(NbtOps.INSTANCE, targetLevel).resultOrPartial(SSWar.LOGGER::error).ifPresent((encoded) -> {
+                compass.getTag().put("LodestoneDimension", encoded);
+            });
+        } else {
+            // update tag
+            compass.getTag().put("LodestonePos", NbtUtils.writeBlockPos(player.blockPosition()));
+            compass.getTag().put("LodestoneDimension", new CompoundTag());
+        }
+        // update player status bar
+        final Component message = MessageUtils.component("item.sswar.war_compass.status_bar", target.getDisplayName().getString(), targetLevel.location().getPath(), (tracked ? targetPos.getY() : "-"));
+        player.displayClientMessage(message, true);
+        // update lore text
+        CompoundTag display = compass.getOrCreateTagElement("display");
+        ListTag lore = display.getList("Lore", Tag.TAG_STRING);
+        if(lore.size() > 0) {
+            lore.remove(0);
+        }
+        lore.add(0, StringTag.valueOf(Component.Serializer.toJson(message)));
+    }
+
+    public static SimpleContainer createPlayerHeads(final ServerPlayer required, final List<ServerPlayer> validPlayers, final boolean showDeathCount) {
         // create container
         SimpleContainer container = new SimpleContainer(validPlayers.size() + 1);
         // add non-required players
         for(int i = 0, n = validPlayers.size(); i < n; i++) {
-            container.setItem(i, createPlayerHead(validPlayers.get(i), false));
+            ItemStack playerHead = createPlayerHead(validPlayers.get(i), false, showDeathCount);
+            // add head item to container
+            container.setItem(i, playerHead);
         }
         // required player is last
-        container.addItem(createPlayerHead(required, true));
+        container.addItem(createPlayerHead(required, true, showDeathCount));
         return container;
     }
 
@@ -284,16 +488,23 @@ public final class WarUtils {
     /**
      * @param player the player
      * @param required true if the player is marked as required
+     * @param showDeathCount true to show the player death count
      * @return an ItemStack with a player head for the given player
      */
-    public static ItemStack createPlayerHead(final ServerPlayer player, final boolean required) {
+    public static ItemStack createPlayerHead(final ServerPlayer player, final boolean required, final boolean showDeathCount) {
         ItemStack itemStack = Items.PLAYER_HEAD.getDefaultInstance();
         GameProfile profile = player.getGameProfile();
+        // write game profile
         CompoundTag tag = new CompoundTag();
         NbtUtils.writeGameProfile(tag, profile);
         itemStack.getOrCreateTag().put(DeclareWarMenu.KEY_SKULL_OWNER, tag);
         if(required) {
-            // TODO re-enable itemStack.getTag().putBoolean(DeclareWarMenu.KEY_REQUIRED_PLAYER, true);
+            itemStack.getTag().putBoolean(DeclareWarMenu.KEY_REQUIRED_PLAYER, true);
+        }
+        // write death count
+        if(showDeathCount) {
+            IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
+            // TODO
         }
         return itemStack;
     }

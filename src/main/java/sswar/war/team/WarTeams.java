@@ -1,25 +1,34 @@
 package sswar.war.team;
 
+import com.google.common.collect.ImmutableList;
 import com.mojang.datafixers.util.Pair;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraftforge.common.util.INBTSerializable;
+import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 
-public class WarTeams implements INBTSerializable<CompoundTag> {
+public class WarTeams implements Iterable<WarTeam>, INBTSerializable<CompoundTag> {
 
     private WarTeam teamA;
     private WarTeam teamB;
+
+    private final List<WarTeam> teamList = new ArrayList<>();
 
     //// CONSTRUCTORS ////
 
     public WarTeams(final WarTeam teamA, final WarTeam teamB) {
         this.teamA = teamA;
         this.teamB = teamB;
+        this.teamList.add(teamA);
+        this.teamList.add(teamB);
     }
 
     public WarTeams(final CompoundTag tag) {
@@ -110,5 +119,14 @@ public class WarTeams implements INBTSerializable<CompoundTag> {
     public void deserializeNBT(CompoundTag tag) {
         teamA = new WarTeam(tag.getCompound(KEY_TEAM_A));
         teamB = new WarTeam(tag.getCompound(KEY_TEAM_B));
+        teamList.clear();
+        teamList.add(teamA);
+        teamList.add(teamB);
+    }
+
+    @NotNull
+    @Override
+    public Iterator<WarTeam> iterator() {
+        return ImmutableList.copyOf(teamList).iterator();
     }
 }

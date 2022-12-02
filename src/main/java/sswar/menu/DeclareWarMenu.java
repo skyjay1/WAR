@@ -43,6 +43,7 @@ public class DeclareWarMenu extends AbstractContainerMenu {
     private String teamAName;
     private String teamBName;
     private boolean hasPrepPeriod;
+    private boolean forceTransfer;
 
     public DeclareWarMenu(int id, final Container validPlayers, final int maxPlayers) {
         super(WarRegistry.DECLARE_WAR_MENU.get(), id);
@@ -90,41 +91,47 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         return count;
     }
 
-    public static void transfer(final ItemButtonHolder from, final ItemButtonHolder to, final int slotFrom) {
+    public void transfer(final ItemButtonHolder from, final ItemButtonHolder to, final int slotFrom) {
         transfer(from.getContainer(), to.getContainer(), slotFrom);
         from.updateItemButtons();
         to.updateItemButtons();
     }
 
-    public static void transfer(final Container from, final Container to, final int slotFrom) {
+    public void transfer(final Container from, final Container to, final int slotFrom) {
         if(slotFrom < 0 || slotFrom >= from.getContainerSize()) {
             return;
         }
         ItemStack itemStack = from.getItem(slotFrom);
         // determine if item can be removed
-        if(itemStack.hasTag() && itemStack.getTag().getBoolean(KEY_REQUIRED_PLAYER)) {
+        if(!forceTransfer && itemStack.hasTag() && itemStack.getTag().getBoolean(KEY_REQUIRED_PLAYER)) {
             return;
         }
+        forceTransfer = false;
         from.removeItemNoUpdate(slotFrom);
+        // find first available slot
         for(int i = 0, n = to.getContainerSize(); i < n; i++) {
             if(to.getItem(i).isEmpty() && to.canPlaceItem(i, itemStack)) {
+                // add the item to this slot
                 to.setItem(i, itemStack);
+                return;
             }
         }
+        // no slot found, return item to original container
+        from.setItem(slotFrom, itemStack);
     }
 
-    public static void transferAll(final ItemButtonHolder from, final ItemButtonHolder to) {
+    public void transferAll(final ItemButtonHolder from, final ItemButtonHolder to) {
         transferAll(from.getContainer(), to.getContainer());
         from.updateItemButtons();
         to.updateItemButtons();
     }
 
-    public static void transferAll(final Container from, final Container to) {
+    public void transferAll(final Container from, final Container to) {
         for(int i = 0, n = from.getContainerSize(); i < n; i++) {
             // remove item
             ItemStack item = from.getItem(i);
             // determine if item can be removed
-            if(item.hasTag() && item.getTag().getBoolean(KEY_REQUIRED_PLAYER)) {
+            if(!forceTransfer && item.hasTag() && item.getTag().getBoolean(KEY_REQUIRED_PLAYER)) {
                 continue;
             }
             from.removeItemNoUpdate(i);
@@ -136,6 +143,7 @@ public class DeclareWarMenu extends AbstractContainerMenu {
                 }
             }
         }
+        forceTransfer = false;
         from.setChanged();
         to.setChanged();
     }
@@ -149,22 +157,6 @@ public class DeclareWarMenu extends AbstractContainerMenu {
             }
         }
         return -1;
-    }
-
-    /**
-     * @return true if there are a valid number of players in the invited lists
-     */
-    public boolean isSelectionValid() {
-        if(!selectedPlayers.isEmpty()) {
-            int selectedCount = selectedPlayers.countItem(Items.PLAYER_HEAD);
-            return selectedCount >= 2;
-        }
-        // check if both team A and team B have at least 1 player
-        if(teamA.isEmpty() || teamB.isEmpty()) {
-            return false;
-        }
-        // all checks passed
-        return true;
     }
 
     /**
@@ -232,7 +224,7 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         // determine required size
         int teamSize = removedItems.size() / 2;
         // check container size
-        if(a.getContainerSize() < teamSize || b.getContainerSize() < teamSize) {
+        if(teamSize < 1 || a.getContainerSize() < teamSize || b.getContainerSize() < teamSize) {
             return false;
         }
         // shuffle the list
@@ -240,11 +232,13 @@ public class DeclareWarMenu extends AbstractContainerMenu {
         // assign players from selected into A and B evenly (extras go in A)
         a.clearContent();
         b.clearContent();
-        for(int i = 0, n = removedItems.size(); i < n; i++) {
-            a.setItem(i, removedItems.pop());
+        int slot = 0;
+        while(!removedItems.isEmpty() && slot < a.getContainerSize()) {
+            a.setItem(slot, removedItems.pop());
             if(!removedItems.isEmpty()) {
-                b.setItem(i, removedItems.pop());
+                b.setItem(slot, removedItems.pop());
             }
+            slot++;
         }
         // update containers
         selected.setChanged();
@@ -295,5 +289,13 @@ public class DeclareWarMenu extends AbstractContainerMenu {
 
     public void toggleHasPrepPeriod() {
         this.hasPrepPeriod = !this.hasPrepPeriod;
+    }
+
+    /**
+     * Indicates that the next transfer or transferAll operation should
+     * move items that are marked as Required
+     */
+    public void forceTransfer() {
+        forceTransfer = true;
     }
 }

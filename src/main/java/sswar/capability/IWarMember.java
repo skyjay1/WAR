@@ -63,6 +63,10 @@ public interface IWarMember extends INBTSerializable<CompoundTag> {
         return getActiveWar() != null;
     }
 
+    default void clearActiveWar() {
+        setActiveWar(null);
+    }
+
     //// NBT ////
 
     static final String KEY_WAR = "War";

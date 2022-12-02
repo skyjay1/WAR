@@ -1,5 +1,6 @@
 package sswar.war.team;
 
+import com.google.common.collect.ImmutableSet;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -7,15 +8,17 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.common.util.INBTSerializable;
+import org.jetbrains.annotations.NotNull;
 import sswar.WarUtils;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-public class WarTeam implements INBTSerializable<CompoundTag> {
+public class WarTeam implements Iterable<UUID>, INBTSerializable<CompoundTag> {
 
     private String name;
     private Map<UUID, WarTeamEntry> team = new HashMap<>();
@@ -59,6 +62,10 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
         return count;
     }
 
+    /**
+     * @param server the server
+     * @return Map where Key=PlayerId and Value=Username
+     */
     public Map<UUID, String> getPlayerNames(final MinecraftServer server) {
         Map<UUID, String> nameList = new HashMap<>();
         for(UUID uuid : team.keySet()) {
@@ -96,6 +103,10 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
 
     public void setRewarded(boolean rewarded) {
         this.rewarded = rewarded;
+    }
+
+    public boolean hasReward() {
+        return hasReward;
     }
 
     //// NBT ////
@@ -142,5 +153,11 @@ public class WarTeam implements INBTSerializable<CompoundTag> {
             WarTeamEntry entry = new WarTeamEntry(entryTag.getCompound(KEY_ENTRY));
             team.put(playerId, entry);
         }
+    }
+
+    @NotNull
+    @Override
+    public Iterator<UUID> iterator() {
+        return ImmutableSet.copyOf(team.keySet()).iterator();
     }
 }
