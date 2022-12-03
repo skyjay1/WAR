@@ -284,7 +284,7 @@ public class DeclareWarMenu extends AbstractContainerMenu {
     }
 
     public void setTeamBName(final String value) {
-        teamAName = value;
+        teamBName = value;
     }
 
     public void toggleHasPrepPeriod() {

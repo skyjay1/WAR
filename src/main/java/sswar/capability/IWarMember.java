@@ -1,6 +1,8 @@
 package sswar.capability;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraftforge.common.util.INBTSerializable;
 
 import javax.annotation.Nullable;
@@ -49,6 +51,22 @@ public interface IWarMember extends INBTSerializable<CompoundTag> {
      */
     void setLosses(final int losses);
 
+    ListTag getCuriosTag();
+
+    void setCuriosTag(final ListTag tag);
+
+    ListTag getBlueSkiesTag();
+
+    void setBlueSkiesTag(final ListTag tag);
+
+    CompoundTag getCosmeticArmorTag();
+
+    void setCosmeticArmorTag(final CompoundTag tag);
+
+    ListTag getInventoryTag();
+
+    void setInventoryTag(final ListTag tag);
+
     //// HELPER METHODS ////
 
     default void addWin() {
@@ -67,23 +85,54 @@ public interface IWarMember extends INBTSerializable<CompoundTag> {
         setActiveWar(null);
     }
 
+    default boolean hasCuriosTag() {
+        return getCuriosTag() != null;
+    }
+
+    default boolean hasInventoryTag() {
+        return getInventoryTag() != null;
+    }
+
+    default boolean hasCosmeticArmorTag() {
+        return getCosmeticArmorTag() != null;
+    }
+
+    default boolean hasBlueSkiesTag() {
+        return getBlueSkiesTag() != null;
+    }
+
     //// NBT ////
 
     static final String KEY_WAR = "War";
     static final String KEY_WINS = "Wins";
     static final String KEY_LOSSES = "Losses";
     static final String KEY_WAR_ENDED = "WarEnded";
+    static final String KEY_CURIOS = "Curios";
+    static final String KEY_BLUE_SKIES = "BlueSkies";
+    static final String KEY_COSMETIC_ARMOR = "CosmeticArmor";
+    static final String KEY_INVENTORY = "Inventory";
 
     @Override
     default CompoundTag serializeNBT() {
         final CompoundTag tag = new CompoundTag();
-        UUID warId = getActiveWar();
-        if(warId != null) {
-            tag.putUUID(KEY_WAR, warId);
+        if(hasActiveWar()) {
+            tag.putUUID(KEY_WAR, getActiveWar());
         }
         tag.putInt(KEY_WINS, getWins());
         tag.putInt(KEY_LOSSES, getLosses());
         tag.putLong(KEY_WAR_ENDED, getWarEndedTimestamp());
+        if(hasCuriosTag()) {
+            tag.put(KEY_CURIOS, getCuriosTag());
+        }
+        if(hasBlueSkiesTag()) {
+            tag.put(KEY_BLUE_SKIES, getBlueSkiesTag());
+        }
+        if(hasCosmeticArmorTag()) {
+            tag.put(KEY_COSMETIC_ARMOR, getCosmeticArmorTag());
+        }
+        if(hasInventoryTag()) {
+            tag.put(KEY_INVENTORY, getInventoryTag());
+        }
         return tag;
     }
 
@@ -95,5 +144,17 @@ public interface IWarMember extends INBTSerializable<CompoundTag> {
         setWins(tag.getInt(KEY_WAR));
         setLosses(tag.getInt(KEY_LOSSES));
         setWarEndedTimestamp(tag.getLong(KEY_WAR_ENDED));
+        if(tag.contains(KEY_CURIOS, Tag.TAG_LIST)) {
+            setCuriosTag((ListTag) tag.get(KEY_CURIOS));
+        }
+        if(tag.contains(KEY_BLUE_SKIES, Tag.TAG_LIST)) {
+            setBlueSkiesTag((ListTag) tag.get(KEY_BLUE_SKIES));
+        }
+        if(tag.contains(KEY_COSMETIC_ARMOR, Tag.TAG_COMPOUND)) {
+            setCosmeticArmorTag(tag.getCompound(KEY_COSMETIC_ARMOR));
+        }
+        if(tag.contains(KEY_INVENTORY, Tag.TAG_LIST)) {
+            setInventoryTag((ListTag) tag.get(KEY_INVENTORY));
+        }
     }
 }

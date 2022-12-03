@@ -40,7 +40,10 @@ public class ItemButton extends Button {
         screen.getScreen().getMinecraft().getItemRenderer().renderGuiItem(itemStack, renderX, renderY);
         // render tooltip
         if (this.isHoveredOrFocused()) {
+            poseStack.pushPose();
+            poseStack.translate(0, 0, 100);
             this.renderToolTip(poseStack, mouseX, mouseY);
+            poseStack.popPose();
         }
     }
 

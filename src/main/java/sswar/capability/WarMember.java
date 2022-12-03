@@ -2,6 +2,7 @@ package sswar.capability;
 
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.capabilities.ICapabilitySerializable;
@@ -20,6 +21,11 @@ public class WarMember implements IWarMember {
     private long warEndedTimestamp;
     private int wins;
     private int losses;
+
+    private ListTag curiosTag;
+    private ListTag inventoryTag;
+    private ListTag blueSkiesTag;
+    private CompoundTag cosmeticArmorTag;
 
     public WarMember() {
     }
@@ -63,6 +69,46 @@ public class WarMember implements IWarMember {
     @Override
     public void setLosses(int losses) {
         this.losses = losses;
+    }
+
+    @Override
+    public ListTag getCuriosTag() {
+        return curiosTag;
+    }
+
+    @Override
+    public void setCuriosTag(final ListTag tag) {
+        this.curiosTag = tag;
+    }
+
+    @Override
+    public ListTag getBlueSkiesTag() {
+        return blueSkiesTag;
+    }
+
+    @Override
+    public void setBlueSkiesTag(ListTag tag) {
+        this.blueSkiesTag = tag;
+    }
+
+    @Override
+    public CompoundTag getCosmeticArmorTag() {
+        return cosmeticArmorTag;
+    }
+
+    @Override
+    public void setCosmeticArmorTag(CompoundTag tag) {
+        this.cosmeticArmorTag = tag;
+    }
+
+    @Override
+    public ListTag getInventoryTag() {
+        return inventoryTag;
+    }
+
+    @Override
+    public void setInventoryTag(ListTag tag) {
+        this.inventoryTag = tag;
     }
 
     public static class Provider implements ICapabilitySerializable<CompoundTag> {

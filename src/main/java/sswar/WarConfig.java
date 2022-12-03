@@ -4,7 +4,7 @@ import net.minecraftforge.common.ForgeConfigSpec;
 
 public class WarConfig {
 
-    public final ForgeConfigSpec.IntValue RANDOM_WAR_INTERVAL;
+    public final ForgeConfigSpec.IntValue PERIODIC_WAR_INTERVAL;
     public final ForgeConfigSpec.IntValue PLAYER_WAR_COOLDOWN;
     public final ForgeConfigSpec.IntValue RECRUIT_TIMEOUT;
     public final ForgeConfigSpec.IntValue RECRUIT_DURATION;
@@ -14,8 +14,8 @@ public class WarConfig {
 
     public WarConfig(final ForgeConfigSpec.Builder builder) {
         builder.push("options");
-        RANDOM_WAR_INTERVAL = builder.comment("Number of minutes between server war events")
-                .defineInRange("random_war_interval", 30, 0, 10_080);
+        PERIODIC_WAR_INTERVAL = builder.comment("Number of minutes between server war events")
+                .defineInRange("periodic_war_interval", 30, 0, 10_080);
         PLAYER_WAR_COOLDOWN = builder.comment("Number of minutes until a player can participate in another war")
                         .defineInRange("player_war_cooldown", 30, 0, 10_080);
         RECRUIT_TIMEOUT = builder.comment("Number of seconds until the recruit invitation expires")
@@ -31,8 +31,8 @@ public class WarConfig {
         builder.pop();
     }
 
-    public long getRandomWarIntervalTicks() {
-        return RANDOM_WAR_INTERVAL.get() * 60 * 20;
+    public long getPeriodicWarIntervalTicks() {
+        return PERIODIC_WAR_INTERVAL.get() * 60 * 20;
     }
 
     public long getPlayerWarCooldownTicks() {

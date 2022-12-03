@@ -1,5 +1,6 @@
 package sswar.data;
 
+import com.mojang.datafixers.util.Pair;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -8,6 +9,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import sswar.SSWar;
 import sswar.war.team.WarTeam;
+import sswar.war.team.WarTeamEntry;
 import sswar.war.team.WarTeams;
 
 import java.util.HashMap;
@@ -46,6 +48,32 @@ public class TeamSavedData extends SavedData {
         return true;
     }
 
+    /**
+     * @param playerId the player ID
+     * @return the war ID and WarTeams for the given player if it exists
+     */
+    public Optional<Pair<UUID, WarTeams>> getTeamsForPlayer(final UUID playerId) {
+        for(Map.Entry<UUID, WarTeams> entry : teams.entrySet()) {
+            if(entry.getValue().getTeamForPlayer(playerId).isPresent()) {
+                return Optional.of(new Pair<>(entry.getKey(), entry.getValue()));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * @param playerId the player ID
+     * @return the war ID, war team, and war team entry for the player if it exists
+     */
+    public Optional<Pair<UUID, Pair<WarTeam, WarTeamEntry>>> getTeamForPlayer(final UUID playerId) {
+        for(Map.Entry<UUID, WarTeams> entry : teams.entrySet()) {
+            Optional<Pair<WarTeam, WarTeamEntry>> oPair = entry.getValue().getTeamForPlayer(playerId);
+            if(oPair.isPresent()) {
+                return Optional.of(new Pair<>(entry.getKey(), oPair.get()));
+            }
+        }
+        return Optional.empty();
+    }
 
     //// GETTERS AND SETTERS ////
 

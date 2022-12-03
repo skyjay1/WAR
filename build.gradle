@@ -102,9 +102,9 @@ dependencies {
     // Runtime mods for testing
     runtimeOnly fg.deobf("curse.maven:backpacked-${backpacked_project}:${backpacked_file}")
     runtimeOnly fg.deobf("curse.maven:gravestone-${gravestone_project}:${gravestone_file}")
-    runtimeOnly fg.deobf("curse.maven:cosmetic_armor-${cosmetic_armor_project}:${cosmetic_armor_file}")
+    implementation fg.deobf("curse.maven:cosmetic_armor-${cosmetic_armor_project}:${cosmetic_armor_file}")
     runtimeOnly fg.deobf("curse.maven:structure_gel-${structure_gel_project}:${structure_gel_file}")
-    runtimeOnly fg.deobf("curse.maven:blue_skies-${blue_skies_project}:${blue_skies_file}")
+    implementation fg.deobf("curse.maven:blue_skies-${blue_skies_project}:${blue_skies_file}")
 }
 
 jar {

@@ -168,7 +168,11 @@ public class ItemButtonHolder implements GuiEventListener, Widget, NarratableEnt
 
     @Override
     public void render(PoseStack poseStack, int mouseX, int mouseY, float partialTick) {
-        // do nothing
+        for(ItemButton button : buttons) {
+            if(button.isHoveredOrFocused()) {
+                button.renderToolTip(poseStack, mouseX, mouseY);
+            }
+        }
     }
 
     @Override

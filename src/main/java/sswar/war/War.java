@@ -6,6 +6,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.common.util.INBTSerializable;
 import sswar.SSWar;
 import sswar.WarUtils;
@@ -31,15 +32,17 @@ public class War implements INBTSerializable<CompoundTag> {
     private long prepareTimestamp;
     private long activateTimestamp;
     private long endTimestamp;
+    private boolean noPrepPeriod;
 
     //// CONSTRUCTORS ////
 
-    public War(@Nullable UUID owner, String name, long createdTimestamp) {
+    public War(@Nullable final UUID owner, final String name, final boolean noPrepPeriod, final long createdTimestamp) {
         this.owner = owner;
         this.name = name;
         this.state = WarState.CREATING;
         this.createdTimestamp = createdTimestamp;
         this.createdDate = LocalDateTime.now();
+        this.noPrepPeriod = noPrepPeriod;
     }
 
     public War(final CompoundTag tag) {
@@ -115,6 +118,10 @@ public class War implements INBTSerializable<CompoundTag> {
                 }
             }
         }
+        // activate immediately when no prep period
+        if(war.hasNoPrepPeriod()) {
+            startActivate(server, warData, warId, war, teams, timestamp);
+        }
     }
 
     /**
@@ -130,15 +137,21 @@ public class War implements INBTSerializable<CompoundTag> {
                                       final WarTeams teams, final long timestamp) {
         // update state and timestamp
         war.setState(WarState.ACTIVE);
-        war.setPrepareTimestamp(timestamp);
+        war.setActivateTimestamp(timestamp);
         warData.setDirty();
-        // send messages to players in each team
+        // give war compass and send messages to players in each team
         Component message = MessageUtils.component("message.war.lifecycle.activate").withStyle(ChatFormatting.YELLOW);
         for(WarTeam team : teams) {
             for(UUID playerId : team) {
                 ServerPlayer player = server.getPlayerList().getPlayer(playerId);
                 if(player != null) {
+                    // send message
                     player.displayClientMessage(message, false);
+                    // give item
+                    ItemStack compass = WarUtils.makeWarCompass();
+                    if(!player.addItem(compass)) {
+                        player.drop(compass, false);
+                    }
                 }
             }
         }
@@ -160,6 +173,10 @@ public class War implements INBTSerializable<CompoundTag> {
             SSWar.LOGGER.error("[War#end] Failed to end war because the winning and losing team are the same");
             warData.invalidateWar(warId);
             return;
+        }
+        // update periodic war
+        if(warData.hasPeriodicWar() && warId.equals(warData.getPeriodicWarId())) {
+            warData.setPeriodicWarId(null, timestamp);
         }
         // determine whether to give reward
         boolean hasReward = !war.hasOwner() && !(wasForfeit && lose.countPlayersWithDeaths() <= 0);
@@ -232,6 +249,14 @@ public class War implements INBTSerializable<CompoundTag> {
         this.endTimestamp = endTimestamp;
     }
 
+    public boolean hasNoPrepPeriod() {
+        return noPrepPeriod;
+    }
+
+    public void setNoPrepPeriod(boolean noPrepPeriod) {
+        this.noPrepPeriod = noPrepPeriod;
+    }
+
     //// NBT ////
 
     private static final String KEY_OWNER = "Owner";
@@ -242,6 +267,7 @@ public class War implements INBTSerializable<CompoundTag> {
     private static final String KEY_PREPARE = "Prepare";
     private static final String KEY_ACTIVE = "Active";
     private static final String KEY_END = "End";
+    private static final String KEY_NO_PREP = "NoPrep";
 
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss");
 
@@ -258,6 +284,7 @@ public class War implements INBTSerializable<CompoundTag> {
         tag.putLong(KEY_ACTIVE, activateTimestamp);
         tag.putLong(KEY_END, endTimestamp);
         tag.putString(KEY_CREATE_DATE, DATE_TIME_FORMATTER.format(createdDate));
+        tag.putBoolean(KEY_NO_PREP, noPrepPeriod);
         return tag;
     }
 
@@ -273,5 +300,6 @@ public class War implements INBTSerializable<CompoundTag> {
         prepareTimestamp = tag.getLong(KEY_PREPARE);
         activateTimestamp = tag.getLong(KEY_ACTIVE);
         endTimestamp = tag.getLong(KEY_END);
+        noPrepPeriod = tag.getBoolean(KEY_NO_PREP);
     }
 }

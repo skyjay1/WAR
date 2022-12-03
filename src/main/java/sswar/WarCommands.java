@@ -49,12 +49,6 @@ public final class WarCommands {
 
     public static void register(final RegisterCommandsEvent event) {
 
-        // debug
-        // TODO remove for release
-        event.getDispatcher().register(Commands.literal(WAR)
-                .then(Commands.literal("debug")
-                        .executes(context -> debugCommand(context.getSource()))));
-
         // accept
         event.getDispatcher().register(Commands.literal(WAR)
                 .then(Commands.literal("accept")
@@ -97,13 +91,6 @@ public final class WarCommands {
                                 .executes(context -> declare(context.getSource(), IntegerArgumentType.getInteger(context, "max_players"))))));
     }
 
-    private static int debugCommand(final CommandSourceStack context) {
-        // TODO remove for release
-        WarUtils.reward(context.getServer(), context.getPlayer().getUUID(), true, true);
-        context.getPlayer().getInventory().add(WarUtils.makeWarCompass());
-        return Command.SINGLE_SUCCESS;
-    }
-
     private static int accept(final CommandSourceStack context) throws CommandSyntaxException {
         // load target data
         final ServerPlayer target = context.getPlayerOrException();
@@ -124,6 +111,9 @@ public final class WarCommands {
             }
             // attempt to accept recruit request
             if(entry.getValue().accept(target.getUUID())) {
+                // lock the selection
+                entry.getValue().getEntry(target.getUUID()).ifPresent(e -> e.setLocked(true));
+                // save the war ID and recruit instance
                 warId = entry.getKey();
                 recruit = entry.getValue();
                 // save data
@@ -158,6 +148,9 @@ public final class WarCommands {
         for(Map.Entry<UUID, WarRecruit> entry : data.getRecruits().entrySet()) {
             // attempt to deny recruit request
             if(entry.getValue().deny(target.getUUID())) {
+                // lock the selection
+                entry.getValue().getEntry(target.getUUID()).ifPresent(e -> e.setLocked(true));
+                // save the war ID and recruit instance
                 warId = entry.getKey();
                 recruit = entry.getValue();
                 // save data
@@ -194,7 +187,7 @@ public final class WarCommands {
         }
         // load war team and entry
         final WarTeams teams = oTeams.get();
-        final Optional<Pair<WarTeam, WarTeamEntry>> oEntry = teams.getTeamAndEntryForPlayer(player.getUUID());
+        final Optional<Pair<WarTeam, WarTeamEntry>> oEntry = teams.getTeamForPlayer(player.getUUID());
         if(oEntry.isEmpty()) {
             SSWar.LOGGER.error("[WarCommands#forfeit] Failed to determine player team for war with ID " + warId);
             return 0;
@@ -321,7 +314,20 @@ public final class WarCommands {
             throw PLAYER_SELF_IS_IN_WAR.create();
         }
         // ensure there are no pending or accepted requests for this player
-        // TODO
+        final WarSavedData warData = WarSavedData.get(context.getServer());
+        final Optional<Pair<UUID, WarRecruitEntry>> oRecruit = warData.getRecruitForPlayer(player.getUUID());
+        if(oRecruit.isPresent()) {
+            // if the request is denied or invalid, remove it immediately and allow the GUI
+            if(oRecruit.get().getSecond().getState().isRejected()) {
+                warData.getRecruit(oRecruit.get().getFirst()).ifPresent(r -> r.getInvitedPlayers().remove(player.getUUID()));
+            } else {
+                // the player needs to accept or deny the existing request first
+                // send feedback and do not open GUI
+                context.sendFailure(MessageUtils.component("command.war.declare.failure"));
+                player.displayClientMessage(WarUtils.createRecruitComponent(), false);
+                return 0;
+            }
+        }
         // opens war GUI
         if(WarUtils.openWarMenu(player, maxPlayers)) {
             return Command.SINGLE_SUCCESS;
@@ -330,6 +336,10 @@ public final class WarCommands {
         return 0;
     }
 
+    /**
+     * @param player the player
+     * @return a component describing the player wins and losses
+     */
     private static Component createStatsComponent(final ServerPlayer player) {
         final String playerId = player.getStringUUID();
         final Component message = Component.empty();
@@ -341,15 +351,19 @@ public final class WarCommands {
         IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).resolve().orElse(WarMember.EMPTY);
         message.getSiblings().add(Component.literal("\n"));
         message.getSiblings().add(MessageUtils.component("command.war.stats.wins_and_losses", iWarMember.getWins(), iWarMember.getLosses()));
-        //message.getSiblings().add(MessageUtils.component("command.war.stats.wins", iWarMember.getWins()));
-        //message.getSiblings().add(Component.literal("\n"));
-        //message.getSiblings().add(MessageUtils.component("command.war.stats.losses", iWarMember.getLosses()));
         return message;
     }
 
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
+    /**
+     * @param server the server
+     * @param warId the war ID
+     * @param war the war instance
+     * @param warTeams the war teams
+     * @return a component describing the given war
+     */
     private static Component createWarComponent(final MinecraftServer server, final UUID warId, final War war, final WarTeams warTeams) {
         final String sWarid = warId.toString();
         Component message = Component.empty();
@@ -389,6 +403,12 @@ public final class WarCommands {
         return message;
     }
 
+    /**
+     * @param server the server
+     * @param team the team
+     * @param prefix a string to prefix this component
+     * @return a component describing the war team
+     */
     private static Component createTeamComponent(final MinecraftServer server, final WarTeam team, final String prefix) {
         Component message = Component.literal(prefix);
         // add team name

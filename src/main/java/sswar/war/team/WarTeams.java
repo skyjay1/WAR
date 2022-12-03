@@ -56,22 +56,6 @@ public class WarTeams implements Iterable<WarTeam>, INBTSerializable<CompoundTag
     }
 
     /**
-     * @param player the player UUID
-     * @return the team and entry for the given player, or empty if they are not in this war
-     */
-    public Optional<Pair<WarTeam, WarTeamEntry>> getTeamAndEntryForPlayer(final UUID player) {
-        WarTeamEntry entry = teamA.getTeam().get(player);
-        if(entry != null) {
-            return Optional.of(new Pair<>(teamA, entry));
-        }
-        entry = teamB.getTeam().get(player);
-        if(entry != null) {
-            return Optional.of(new Pair<>(teamB, entry));
-        }
-        return Optional.empty();
-    }
-
-    /**
      * Removes players that do not match the filter
      * @param filter a predicate for players to keep
      */

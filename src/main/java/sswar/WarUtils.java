@@ -39,6 +39,7 @@ import sswar.util.MessageUtils;
 import sswar.war.War;
 import sswar.war.WarState;
 import sswar.war.recruit.WarRecruit;
+import sswar.war.recruit.WarRecruitState;
 import sswar.war.team.WarTeam;
 import sswar.war.team.WarTeamEntry;
 import sswar.war.team.WarTeams;
@@ -48,6 +49,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -138,7 +140,7 @@ public final class WarUtils {
      */
     public static void onPlayerForfeit(final ServerPlayer player, final TeamSavedData teamData, final WarTeams teams, final WarTeam team, final WarTeamEntry entry) {
         // create message
-        final int remainingForfeits = team.getTeam().size() / 2 - team.countForfeits();
+        final int remainingForfeits = Mth.ceil(team.getTeam().size() / 2.0F) - team.countForfeits();
         Component message = MessageUtils.component("message.war.event.forfeit", player.getDisplayName().getString(), remainingForfeits, team.getName()).withStyle(ChatFormatting.YELLOW);
         // end messages to players in the same war
         for(WarTeam t : teams) {
@@ -154,11 +156,11 @@ public final class WarUtils {
     /**
      * Called when a player dies to update death count
      * @param player the player that died
+     * @param warData the war data
      * @param warId the ID of the active war
      */
-    public static void onPlayerDeath(final ServerPlayer player, final UUID warId) {
+    public static void onPlayerDeath(final ServerPlayer player, final WarSavedData warData, final UUID warId) {
         // load war data and active war
-        final WarSavedData warData = WarSavedData.get(player.getServer());
         final Optional<War> oWar = warData.getWar(warId);
         if(oWar.isEmpty()) {
             return;
@@ -188,14 +190,33 @@ public final class WarUtils {
 
 
     public static void onPlayerAcceptRecruit(final ServerPlayer player, final WarSavedData data, final UUID warId) {
-        Optional<War> oWar = data.getWar(warId);
-        // send feedback to war owner, if present
+        final Optional<War> oWar = data.getWar(warId);
+        // update war
         oWar.ifPresent(war -> {
             if(war.hasOwner()) {
+                // send message to owner
                 ServerPlayer owner = player.getServer().getPlayerList().getPlayer(war.getOwner());
                 if(owner != null) {
                     owner.displayClientMessage(MessageUtils.component("command.war.accept.success.feedback", player.getDisplayName().getString())
                             .withStyle(ChatFormatting.GREEN), false);
+                }
+            }
+            // load the war recruit and teams for this war
+            final Optional<WarRecruit> oRecruit = data.getRecruit(warId);
+            final TeamSavedData teamData = TeamSavedData.get(player.getServer());
+            final Optional<WarTeams> oTeams = teamData.getTeams(warId);
+            // check recruit status
+            if(oRecruit.isPresent() && oTeams.isPresent()) {
+                final Map<WarRecruitState, Integer> counts = oRecruit.get().getCounts();
+                final int pending = counts.getOrDefault(WarRecruitState.PENDING, 0);
+                final int accepted = counts.getOrDefault(WarRecruitState.ACCEPT, 0);
+                // if no invited players have pending recruits, finish the recruiting phase immediately
+                if(pending < 1 && (war.hasOwner() || listValidPlayers(player.getServer(), oRecruit.get().getInvitedPlayers().keySet()).isEmpty())) {
+                    if(accepted > 1) {
+                        War.startPreparing(player.getServer(), data, warId, war, oTeams.get(), player.level.getGameTime());
+                    } else {
+                        War.cancelRecruiting(player.getServer(), data, warId, war, oTeams.get(), oRecruit.get());
+                    }
                 }
             }
         });
@@ -229,6 +250,10 @@ public final class WarUtils {
         if(null == player) {
             return false;
         }
+        // ensure they are fully loaded
+        if(player.tickCount < 10 || player.isChangingDimension()) {
+            return false;
+        }
         // load capability
         IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
         if(isWin) {
@@ -247,6 +272,8 @@ public final class WarUtils {
             }
             // add firework particles
             sendFireworks(player);
+            // send message
+            player.displayClientMessage(MessageUtils.component("message.war.lifecycle.reward.win").withStyle(ChatFormatting.GREEN), false);
         } else {
             // add stats
             iWarMember.addLoss();
@@ -340,7 +367,7 @@ public final class WarUtils {
             return false;
         }
         // create container with player heads
-        final SimpleContainer playerHeads = createPlayerHeads(player, validPlayers, true);
+        final SimpleContainer playerHeads = createPlayerHeads(null, validPlayers, true);
         // open menu
         NetworkHooks.openScreen(player, new SimpleMenuProvider((id, inventory, p) ->
                         new WarCompassMenu(id, playerHeads), MessageUtils.component("gui.sswar.war_compass")),
@@ -427,6 +454,7 @@ public final class WarUtils {
             // update tag
             compass.getTag().put("LodestonePos", NbtUtils.writeBlockPos(player.blockPosition()));
             compass.getTag().put("LodestoneDimension", new CompoundTag());
+            return;
         }
         // determine if target is online
         final UUID targetId = compass.getTag().getUUID(KEY_TARGET);
@@ -463,10 +491,17 @@ public final class WarUtils {
         }
         lore.add(0, StringTag.valueOf(Component.Serializer.toJson(message)));
         // cancel equip update when tag changes
-        // TODO
+        // TODO is this possible server-side?
     }
 
-    public static SimpleContainer createPlayerHeads(final ServerPlayer required, final List<ServerPlayer> validPlayers, final boolean showDeathCount) {
+    /**
+     * Creates a container with player heads for each player
+     * @param required the required player, if any
+     * @param validPlayers the players to add to the container
+     * @param showDeathCount true to show the number of deaths per player
+     * @return the filled container
+     */
+    public static SimpleContainer createPlayerHeads(@Nullable final ServerPlayer required, final List<ServerPlayer> validPlayers, final boolean showDeathCount) {
         // create container
         SimpleContainer container = new SimpleContainer(validPlayers.size() + 1);
         // add non-required players
@@ -476,7 +511,9 @@ public final class WarUtils {
             container.setItem(i, playerHead);
         }
         // required player is last
-        container.addItem(createPlayerHead(required, true, showDeathCount));
+        if(required != null) {
+            container.addItem(createPlayerHead(required, true, showDeathCount));
+        }
         return container;
     }
 
@@ -591,17 +628,12 @@ public final class WarUtils {
         teamA.removeIf(uuid -> !isValidPlayer(server, uuid));
         final List<UUID> teamB = new ArrayList<>(listB);
         teamB.removeIf(uuid -> !isValidPlayer(server, uuid));
-        // ensure there is at least 1 player per team
-        // EDIT: teams can be empty for server-created wars
-        /*if(teamA.isEmpty() || teamB.isEmpty()) {
-            return false;
-        }*/
         // determine game time
         final long gameTime = server.getLevel(Level.OVERWORLD).getGameTime();
         // load war data
         final WarSavedData warData = WarSavedData.get(server);
         // create war
-        final Pair<UUID, War> pair = warData.createWar(owner, warName, gameTime, maxPlayers);
+        final Pair<UUID, War> pair = warData.createWar(owner, warName, gameTime, !hasPrepPeriod, maxPlayers);
         // load WarRecruit
         final Optional<WarRecruit> oRecruit = warData.getRecruit(pair.getFirst());
         oRecruit.ifPresent(recruit -> {

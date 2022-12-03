@@ -1,8 +1,11 @@
 package sswar;
 
 import com.mojang.datafixers.util.Pair;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.BossEvent;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -34,6 +37,8 @@ import sswar.war.team.WarTeamEntry;
 import sswar.war.team.WarTeams;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,6 +46,8 @@ import java.util.UUID;
 
 
 public final class WarEvents {
+
+    private static final Map<UUID, ServerBossEvent> bossBarEvents = new HashMap<>();
 
     public static final class ModHandler {
 
@@ -113,19 +120,43 @@ public final class WarEvents {
          * Updates death counts when a player dies during an active war
          * @param event the death event
          */
-        @SubscribeEvent
+        @SubscribeEvent(priority = EventPriority.HIGHEST)
         public static void onPlayerDeath(final LivingDeathEvent event) {
             if(event.getEntity().level.isClientSide()) {
                 return;
             }
             // check if a player died
             if(event.getEntity() instanceof ServerPlayer player) {
+                // load war data
+                final WarSavedData warData = WarSavedData.get(player.getServer());
+                // check if player has active war
                 IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
                 if(iWarMember.hasActiveWar()) {
-                    // update death count
-                    WarUtils.onPlayerDeath(player, iWarMember.getActiveWar());
+                    // update player death
+                    WarUtils.onPlayerDeath(player, warData, iWarMember.getActiveWar());
+                    // update inter-mod compatibility
+                    SSWar.onPlayerDeath(player, warData, iWarMember.getActiveWar());
+                } else {
+                    // check if player is in a war that is preparing
+                    final TeamSavedData teamData = TeamSavedData.get(player.getServer());
+                    Optional<Pair<UUID, WarTeams>> oTeam = teamData.getTeamsForPlayer(player.getUUID());
+                    if(oTeam.isPresent()) {
+                        Optional<War> oWar = warData.getWar(oTeam.get().getFirst());
+                        if(oWar.isPresent() && oWar.get().getState() == WarState.PREPARING) {
+                            // update inter-mod compatibility
+                            SSWar.onPlayerDeath(player, warData, oTeam.get().getFirst());
+                        }
+                    }
                 }
             }
+        }
+
+        @SubscribeEvent
+        public static void onPlayerRespawn(final PlayerEvent.PlayerRespawnEvent event) {
+            if(event.getEntity().level.isClientSide() || !(event.getEntity() instanceof ServerPlayer)) {
+                return;
+            }
+            SSWar.onPlayerRespawn((ServerPlayer) event.getEntity());
         }
 
         @SubscribeEvent
@@ -258,11 +289,11 @@ public final class WarEvents {
     private static void updateServerWars(final MinecraftServer server, final WarSavedData data) {
         // determine game time
         final long gameTime = server.getLevel(Level.OVERWORLD).getGameTime();
-        // update or create random war
+        // update or create periodic war
         if(data.hasPeriodicWar()) {
-            Optional<War> randomWar = data.getWar(data.getPeriodicWarId());
-            randomWar.ifPresent(war -> updateRandomWar(server, data, data.getPeriodicWarId(), war));
-        } else if(server.getPlayerList().getPlayerCount() > 1 && (data.getPeriodicWarTimestamp() == 0 || gameTime - data.getPeriodicWarTimestamp() > SSWar.CONFIG.getRandomWarIntervalTicks())) {
+            Optional<War> periodic = data.getWar(data.getPeriodicWarId());
+            periodic.ifPresent(war -> updatePeriodicWar(server, data, data.getPeriodicWarId(), war));
+        } else if(WarUtils.listValidPlayers(server, List.of()).size() > 1 && (data.getPeriodicWarTimestamp() == 0 || gameTime - data.getPeriodicWarTimestamp() > SSWar.CONFIG.getPeriodicWarIntervalTicks())) {
             Optional<UUID> warId = WarUtils.tryCreateWar(null, WarUtils.WAR_NAME, WarUtils.TEAM_A_NAME, WarUtils.TEAM_B_NAME, List.of(), List.of(), WarUtils.MAX_PLAYER_COUNT, true);
             // update timestamp
             warId.ifPresent(uuid -> {
@@ -280,11 +311,10 @@ public final class WarEvents {
             }
         }
         // remove invalid wars
+        TeamSavedData teamData = TeamSavedData.get(server);
         for(UUID warId : toRemove) {
             data.removeWar(warId);
-            if(data.hasPeriodicWar() && warId.equals(data.getPeriodicWarId())) {
-                data.setPeriodicWarId(null, gameTime);
-            }
+            teamData.getTeams().remove(warId);
         }
     }
 
@@ -295,7 +325,7 @@ public final class WarEvents {
      * @param warId the war ID
      * @param war the server war instance
      */
-    private static void updateRandomWar(final MinecraftServer server, final WarSavedData data, final UUID warId, final War war) {
+    private static void updatePeriodicWar(final MinecraftServer server, final WarSavedData data, final UUID warId, final War war) {
         if(war.getState() == WarState.RECRUITING) {
             // load the war recruit instance
             Optional<WarRecruit> oWarRecruit = data.getRecruit(warId);
@@ -339,13 +369,15 @@ public final class WarEvents {
                 }
                 break;
             case RECRUITING:
-                // check for recruiting timer expire
-                if(gameTime - war.getCreatedTimestamp() > SSWar.CONFIG.getRecruitDurationTicks()) {
-                    if(oRecruit.isPresent()) {
-                        final WarRecruit recruit = oRecruit.get();
+                if(oRecruit.isPresent()) {
+                    final WarRecruit recruit = oRecruit.get();
+                    // determine recruiting percent
+                    long elapsedTime = gameTime - war.getCreatedTimestamp();
+                    long maxTime = SSWar.CONFIG.getRecruitDurationTicks();
+                    // check for recruiting timer expire
+                    if(elapsedTime > maxTime) {
                         // filter teams by players who accepted recruit invites
                         teams.filterTeams(uuid -> recruit.getEntry(uuid).orElse(WarRecruitEntry.EMPTY).getState().isAccepted());
-                        // save changes
                         teamData.setDirty();
                         // ensure teams are balanced
                         if(WarUtils.tryBalanceTeams(server, teamData, teams.getTeamA(), teams.getTeamB())) {
@@ -355,19 +387,44 @@ public final class WarEvents {
                             // cancel recruiting
                             War.cancelRecruiting(server, warData, warId, war, teams, recruit);
                         }
+                        // remove war recruit instance
+                        warData.removeWarRecruit(warId);
+                        // remove boss bar
+                        removeBossBar(server, warData, teamData, warId, war, teams);
+                    } else {
+                        // determine participating players
+                        final List<UUID> playerList = recruit.getInvitedPlayers().entrySet().stream()
+                                .filter(e -> e.getValue().getState().isAccepted())
+                                .map(Map.Entry::getKey).toList();
+                        // update boss bar overlay
+                        float percent = (float) ((double) elapsedTime / (double) maxTime);
+                        updateBossBar(server, warData, teamData, warId, war, playerList,
+                                Component.translatable(war.getState().getTranslationKey()), BossEvent.BossBarColor.YELLOW, percent);
                     }
-                    // remove war recruit instance
-                    warData.removeWarRecruit(warId);
                 }
                 break;
             case PREPARING:
+                // determine recruiting percent
+                long elapsedTime = gameTime - war.getPrepareTimestamp();
+                long maxTime = SSWar.CONFIG.getPreparationDurationTicks();
                 // check for preparation timer expire
-                if(gameTime - war.getPrepareTimestamp() > SSWar.CONFIG.getPreparationDurationTicks()) {
+                if(elapsedTime > maxTime) {
                     // begin activate
                     War.startActivate(server, warData, warId, war, teams, gameTime);
+                    // update boss bar overlay
+                    removeBossBar(server, warData, teamData, warId, war, teams);
+                } else {
+                    // check forfeit conditions
+                    checkAndUpdateForfeit(server, warData, teamData, warId, war, teams, gameTime);
+                    // determine participating players
+                    final List<UUID> playerList = new ArrayList<>();
+                    playerList.addAll(teams.getTeamA().getTeam().keySet());
+                    playerList.addAll(teams.getTeamB().getTeam().keySet());
+                    // update boss bar overlay
+                    float percent = (float) ((double) elapsedTime / (double) maxTime);
+                    updateBossBar(server, warData, teamData, warId, war, playerList,
+                            Component.translatable(war.getState().getTranslationKey()), BossEvent.BossBarColor.PINK, percent);
                 }
-                // check forfeit conditions
-                checkAndUpdateForfeit(server, warData, teamData, warId, war, teams, gameTime);
                 break;
             case ACTIVE:
                 // check all participating players have this war set as their active war
@@ -389,6 +446,51 @@ public final class WarEvents {
     }
 
     /**
+     * Checks and updates boss bars all participating players
+     * @param server the server
+     * @param warData the war data
+     * @param teamData the team data
+     * @param warId the war ID
+     * @param players the players to add to the boss bar
+     * @param title the boss bar title
+     * @param color the boss bar color
+     * @param percent the percent completion
+     */
+    private static void updateBossBar(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
+                                      final UUID warId, final War war, final Collection<UUID> players, final Component title,
+                                      final BossEvent.BossBarColor color, final float percent) {
+        ServerBossEvent bar = bossBarEvents.computeIfAbsent(warId, uuid -> new ServerBossEvent(title, color, BossEvent.BossBarOverlay.PROGRESS));
+        bar.setName(title);
+        bar.setProgress(percent);
+        bar.setColor(color);
+        for(UUID playerId : players) {
+            final ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+            if(player != null && !bar.getPlayers().contains(player)) {
+                bar.addPlayer(player);
+            }
+        }
+    }
+
+    /**
+     * Removes a boss bar for the given war
+     * @param server the server
+     * @param warData the war data
+     * @param teamData the team data
+     * @param warId the war ID
+     * @param war the war instance
+     * @param warTeams the war teams
+     */
+    private static void removeBossBar(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
+                                      final UUID warId, final War war, final WarTeams warTeams) {
+        ServerBossEvent bar = bossBarEvents.get(warId);
+        if(null == bar) {
+            return;
+        }
+        bar.removeAllPlayers();
+        bossBarEvents.remove(warId);
+    }
+
+    /**
      * Checks and updates active war flags for all participating players
      * @param server the server
      * @param warData the war data
@@ -400,6 +502,8 @@ public final class WarEvents {
      */
     private static void checkAndUpdateActiveFlags(final MinecraftServer server, final WarSavedData warData, final TeamSavedData teamData,
                                               final UUID warId, final War war, final WarTeams warTeams, final long timestamp) {
+        // player created wars should not affect cooldown
+        long endedTimestamp = war.hasOwner() ? 0 : war.getEndTimestamp();
         // send messages to players in each team
         for(WarTeam team : warTeams) {
             for(UUID playerId : team) {
@@ -411,7 +515,8 @@ public final class WarEvents {
                         if(war.getState() == WarState.ACTIVE) {
                             c.setActiveWar(warId);
                         } else if(war.getState() == WarState.ENDED) {
-                            c.setWarEndedTimestamp(war.getEndTimestamp());
+                            c.clearActiveWar();
+                            c.setWarEndedTimestamp(endedTimestamp);
                         }
                     });
                 }

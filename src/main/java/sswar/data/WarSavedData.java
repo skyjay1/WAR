@@ -67,9 +67,9 @@ public class WarSavedData extends SavedData {
         recruits.put(warId, warRecruit);
     }
 
-    public Pair<UUID, War> createWar(@Nullable final UUID owner, final String name, final long timestamp, final int maxPlayers) {
+    public Pair<UUID, War> createWar(@Nullable final UUID owner, final String name, final long timestamp, final boolean noPrepPeriod, final int maxPlayers) {
         final UUID warId = getNextUUID(this);
-        War war = new War(owner, name, timestamp);
+        War war = new War(owner, name, noPrepPeriod, timestamp);
         WarRecruit recruit = new WarRecruit(maxPlayers);
         // add war and recruit to maps
         wars.put(warId, war);
