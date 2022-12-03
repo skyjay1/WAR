@@ -98,7 +98,7 @@ public class ScrollButton extends Button {
 
     public void setScrollPercent(final float scrollPercent) {
         this.scrollPercent = scrollPercent;
-        listener.apply(this, scrollPercent);
+        listener.onScroll(this, scrollPercent);
     }
 
     @FunctionalInterface
@@ -108,6 +108,6 @@ public class ScrollButton extends Button {
          * @param button the scroll button
          * @param percent the updated scroll amount
          */
-        void apply(final ScrollButton button, final float percent);
+        void onScroll(final ScrollButton button, final float percent);
     }
 }

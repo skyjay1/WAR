@@ -1,12 +1,11 @@
 package sswar;
 
+import com.mojang.datafixers.util.Pair;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.common.capabilities.RegisterCapabilitiesEvent;
 import net.minecraftforge.common.util.LazyOptional;
@@ -14,7 +13,6 @@ import net.minecraftforge.event.AttachCapabilitiesEvent;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
-import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
@@ -36,11 +34,9 @@ import sswar.war.team.WarTeamEntry;
 import sswar.war.team.WarTeams;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 
@@ -107,9 +103,8 @@ public final class WarEvents {
             // load war data
             final WarSavedData warData = WarSavedData.get(event.getEntity().getServer());
             // check for pending requests
-            Optional<UUID> oWarId = warData.getPendingRecruitForPlayer(event.getEntity().getUUID());
-            if(oWarId.isPresent()) {
-                // there is a pending request for this player, re-send the recruit message
+            Optional<Pair<UUID, WarRecruitEntry>> oWarRecruit = warData.getRecruitForPlayer(event.getEntity().getUUID());
+            if(oWarRecruit.isPresent() && oWarRecruit.get().getSecond().getState() == WarRecruitState.PENDING) {
                 event.getEntity().displayClientMessage(WarUtils.createRecruitComponent(), false);
             }
         }
@@ -190,8 +185,8 @@ public final class WarEvents {
                 return;
             }
             // check if players are not on the same team
-            final Optional<WarTeam> oPlayerTeam = oTeams.get().getTeamForPlayer(player.getUUID());
-            if(oPlayerTeam.isEmpty() || oPlayerTeam.get().getEntry(source.getUUID()).isEmpty()) {
+            final Optional<Pair<WarTeam, WarTeamEntry>> oPlayerTeam = oTeams.get().getTeamForPlayer(player.getUUID());
+            if(oPlayerTeam.isEmpty() || oPlayerTeam.get().getFirst().getEntry(source.getUUID()).isEmpty()) {
                 return;
             }
             // all checks passed, cancel damage event
@@ -264,14 +259,14 @@ public final class WarEvents {
         // determine game time
         final long gameTime = server.getLevel(Level.OVERWORLD).getGameTime();
         // update or create random war
-        if(data.hasRandomWar()) {
-            Optional<War> randomWar = data.getWar(data.getRandomWarId());
-            randomWar.ifPresent(war -> updateRandomWar(server, data, data.getRandomWarId(), war));
-        } else if(gameTime - data.getRandomWarTimestamp() > SSWar.CONFIG.getRandomWarIntervalTicks()) {
+        if(data.hasPeriodicWar()) {
+            Optional<War> randomWar = data.getWar(data.getPeriodicWarId());
+            randomWar.ifPresent(war -> updateRandomWar(server, data, data.getPeriodicWarId(), war));
+        } else if(server.getPlayerList().getPlayerCount() > 1 && (data.getPeriodicWarTimestamp() == 0 || gameTime - data.getPeriodicWarTimestamp() > SSWar.CONFIG.getRandomWarIntervalTicks())) {
             Optional<UUID> warId = WarUtils.tryCreateWar(null, WarUtils.WAR_NAME, WarUtils.TEAM_A_NAME, WarUtils.TEAM_B_NAME, List.of(), List.of(), WarUtils.MAX_PLAYER_COUNT, true);
             // update timestamp
             warId.ifPresent(uuid -> {
-                data.setRandomWarId(uuid, gameTime);
+                data.setPeriodicWarId(uuid, gameTime);
             });
         }
         // create list of wars to remove
@@ -286,7 +281,10 @@ public final class WarEvents {
         }
         // remove invalid wars
         for(UUID warId : toRemove) {
-            data.getWars().remove(warId);
+            data.removeWar(warId);
+            if(data.hasPeriodicWar() && warId.equals(data.getPeriodicWarId())) {
+                data.setPeriodicWarId(null, gameTime);
+            }
         }
     }
 
@@ -314,7 +312,7 @@ public final class WarEvents {
             });
         } else {
             // war is no longer recruiting, remove it from data
-            data.clearRandomWar();
+            data.clearPeriodicWar();
         }
     }
 
@@ -526,7 +524,7 @@ public final class WarEvents {
         boolean isWinA = warTeams.getTeamA().isWin();
         for(Map.Entry<UUID, WarTeamEntry> entry : warTeams.getTeamA().getTeam().entrySet()) {
             // add reward
-            if(!entry.getValue().isRewarded() && WarUtils.reward(server, entry.getKey(), isWinA)) {
+            if(!entry.getValue().isRewarded() && WarUtils.reward(server, entry.getKey(), isWinA, warTeams.getTeamA().hasReward())) {
                 entry.getValue().setRewarded(true);
                 teamData.setDirty();
             }
@@ -539,7 +537,7 @@ public final class WarEvents {
         boolean isWinB = warTeams.getTeamB().isWin();
         for(Map.Entry<UUID, WarTeamEntry> entry : warTeams.getTeamB().getTeam().entrySet()) {
             // add reward
-            if(!entry.getValue().isRewarded() && WarUtils.reward(server, entry.getKey(), isWinB)) {
+            if(!entry.getValue().isRewarded() && WarUtils.reward(server, entry.getKey(), isWinB, warTeams.getTeamB().hasReward())) {
                 entry.getValue().setRewarded(true);
                 teamData.setDirty();
             }

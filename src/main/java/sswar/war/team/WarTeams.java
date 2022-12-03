@@ -39,14 +39,18 @@ public class WarTeams implements Iterable<WarTeam>, INBTSerializable<CompoundTag
 
     /**
      * @param player the player UUID
-     * @return the team for the given player, or empty if they are not in this war
+     * @return the team and entry for the given player, or empty if they are not in this war
      */
-    public Optional<WarTeam> getTeamForPlayer(final UUID player) {
-        if(teamA.getTeam().containsKey(player)) {
-            return Optional.of(teamA);
+    public Optional<Pair<WarTeam, WarTeamEntry>> getTeamForPlayer(final UUID player) {
+        // locate on team A
+        WarTeamEntry entry = teamA.getTeam().get(player);
+        if(entry != null) {
+            return Optional.of(new Pair<>(teamA, entry));
         }
-        if(teamB.getTeam().containsKey(player)) {
-            return Optional.of(teamB);
+        // locate on team B
+        entry = teamB.getTeam().get(player);
+        if(entry != null) {
+            return Optional.of(new Pair<>(teamB, entry));
         }
         return Optional.empty();
     }
@@ -127,6 +131,6 @@ public class WarTeams implements Iterable<WarTeam>, INBTSerializable<CompoundTag
     @NotNull
     @Override
     public Iterator<WarTeam> iterator() {
-        return ImmutableList.copyOf(teamList).iterator();
+        return teamList.iterator();
     }
 }

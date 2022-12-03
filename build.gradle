@@ -30,6 +30,9 @@ minecraft {
             property 'forge.logging.markers', 'REGISTRIES'
             property 'forge.logging.console.level', 'debug'
 
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${buildDir}/createSrgToMcp/output.srg"
+
             mods {
                 sswar {
                     source sourceSets.main
@@ -42,6 +45,9 @@ minecraft {
 
             property 'forge.logging.markers', 'REGISTRIES'
             property 'forge.logging.console.level', 'debug'
+
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${buildDir}/createSrgToMcp/output.srg"
 
             mods {
                 sswar {
@@ -69,14 +75,36 @@ minecraft {
 }
 
 repositories {
-    maven { // CURSE
+    maven {
         name 'CurseMaven'
         url 'https://www.cursemaven.com/'
+    }
+    maven {
+        name 'Curios'
+        url = "https://maven.theillusivec4.top/"
+    }
+    maven {
+        name 'JEI'
+        url 'https://dvs1.progwml6.com/files/maven'
     }
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}"
+
+    // Curios
+    runtimeOnly fg.deobf("top.theillusivec4.curios:curios-forge:${curios_version}")
+    compileOnly fg.deobf("top.theillusivec4.curios:curios-forge:${curios_version}:api")
+
+    // JEI
+    implementation fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
+
+    // Runtime mods for testing
+    runtimeOnly fg.deobf("curse.maven:backpacked-${backpacked_project}:${backpacked_file}")
+    runtimeOnly fg.deobf("curse.maven:gravestone-${gravestone_project}:${gravestone_file}")
+    runtimeOnly fg.deobf("curse.maven:cosmetic_armor-${cosmetic_armor_project}:${cosmetic_armor_file}")
+    runtimeOnly fg.deobf("curse.maven:structure_gel-${structure_gel_project}:${structure_gel_file}")
+    runtimeOnly fg.deobf("curse.maven:blue_skies-${blue_skies_project}:${blue_skies_file}")
 }
 
 jar {

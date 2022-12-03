@@ -11,6 +11,7 @@ import sswar.SSWar;
 import sswar.war.War;
 import sswar.war.WarState;
 import sswar.war.recruit.WarRecruit;
+import sswar.war.recruit.WarRecruitEntry;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -26,8 +27,8 @@ public class WarSavedData extends SavedData {
     private Map<UUID, WarRecruit> recruits = new HashMap<>();
 
     @Nullable
-    private UUID randomWarId;
-    private long randomWarTimestamp;
+    private UUID periodicWarId;
+    private long periodicWarTimestamp;
 
     //// CONSTRUCTORS ////
 
@@ -54,8 +55,8 @@ public class WarSavedData extends SavedData {
 
     //// HELPER METHODS ////
 
-    public boolean hasRandomWar() {
-        return randomWarId != null;
+    public boolean hasPeriodicWar() {
+        return periodicWarId != null;
     }
 
     private void loadWar(final UUID warId, final War war) {
@@ -82,26 +83,39 @@ public class WarSavedData extends SavedData {
      * @param playerId the player ID
      * @return the war ID that contains a pending recruit for this player, if any
      */
-    public Optional<UUID> getPendingRecruitForPlayer(final UUID playerId) {
+    public Optional<Pair<UUID, WarRecruitEntry>> getRecruitForPlayer(final UUID playerId) {
         for(Map.Entry<UUID, WarRecruit> entry : recruits.entrySet()) {
-            if(entry.getValue().getEntry(playerId).isPresent()) {
-                return Optional.of(entry.getKey());
+            Optional<WarRecruitEntry> oEntry = entry.getValue().getEntry(playerId);
+            if(oEntry.isPresent()) {
+                return Optional.of(new Pair<>(entry.getKey(), oEntry.get()));
             }
         }
         return Optional.empty();
     }
 
+    /**
+     * Removes a war and its corresponding war recruit data
+     * @param warId the war ID
+     */
     public void removeWar(final UUID warId) {
         wars.remove(warId);
         recruits.remove(warId);
         setDirty();
     }
 
+    /**
+     * Removes a war recruit instance
+     * @param warId the war ID
+     */
     public void removeWarRecruit(final UUID warId) {
         recruits.remove(warId);
         setDirty();
     }
 
+    /**
+     * Indicates the given war should be removed during the next update
+     * @param warId the war ID
+     */
     public void invalidateWar(final UUID warId) {
         War war = wars.get(warId);
         if(war != null) {
@@ -124,42 +138,69 @@ public class WarSavedData extends SavedData {
 
     //// GETTERS AND SETTERS ////
 
+    /**
+     * @return map where Key=WarID, Value=War
+     */
     public Map<UUID, War> getWars() {
         return wars;
     }
 
+    /**
+     * @return map where Key=WarID, Value=WarRecruit
+     */
     public Map<UUID, WarRecruit> getRecruits() {
         return recruits;
     }
 
+    /**
+     * @param warId the war ID
+     * @return the war if it exists, or empty
+     */
     public Optional<War> getWar(final UUID warId) {
         return Optional.ofNullable(wars.get(warId));
     }
 
+    /**
+     * @param warId the war ID
+     * @return the war recruit instance if it exists, or empty
+     */
     public Optional<WarRecruit> getRecruit(final UUID warId) {
         return Optional.ofNullable(recruits.get(warId));
     }
 
+    /**
+     * @return the war ID of the active periodic war, if it exists
+     */
     @Nullable
-    public UUID getRandomWarId() {
-        return randomWarId;
+    public UUID getPeriodicWarId() {
+        return periodicWarId;
     }
 
-    public void setRandomWarId(final UUID randomWarId, final long timestamp) {
-        this.randomWarId = randomWarId;
-        this.randomWarTimestamp = timestamp;
+    /**
+     * Updates the periodic war and timestamp
+     * @param periodicWarId the periodic war ID
+     * @param timestamp the game time
+     */
+    public void setPeriodicWarId(final UUID periodicWarId, final long timestamp) {
+        this.periodicWarId = periodicWarId;
+        this.periodicWarTimestamp = timestamp;
         setDirty();
     }
 
-    public void clearRandomWar() {
-        this.randomWarId = null;
+    /**
+     * Resets information about the periodic war
+     */
+    public void clearPeriodicWar() {
+        this.periodicWarId = null;
         setDirty();
     }
 
-    public long getRandomWarTimestamp() {
-        return randomWarTimestamp;
+    /**
+     * @return the game time of the end of the most recent periodic war
+     */
+    public long getPeriodicWarTimestamp() {
+        return periodicWarTimestamp;
     }
-
 
     //// NBT ////
 
@@ -167,8 +208,8 @@ public class WarSavedData extends SavedData {
     private static final String KEY_ID = "ID";
     private static final String KEY_WAR = "War";
     private static final String KEY_RECRUIT = "Recruit";
-    private static final String KEY_RANDOM_WAR_ID = "RandomWar";
-    private static final String KEY_RANDOM_WAR_TIMESTAMP = "RandomWarTimestamp";
+    private static final String KEY_PERIODIC_WAR_ID = "PeriodicWar";
+    private static final String KEY_PERIODIC_WAR_TIMESTAMP = "PeriodicWarTimestamp";
 
     @Override
     public CompoundTag save(CompoundTag tag) {
@@ -188,9 +229,9 @@ public class WarSavedData extends SavedData {
             listTag.add(entryTag);
         }
         tag.put(KEY_WAR_MAP, listTag);
-        tag.putLong(KEY_RANDOM_WAR_TIMESTAMP, randomWarTimestamp);
-        if(randomWarId != null) {
-            tag.putUUID(KEY_RANDOM_WAR_ID, randomWarId);
+        tag.putLong(KEY_PERIODIC_WAR_TIMESTAMP, periodicWarTimestamp);
+        if(periodicWarId != null) {
+            tag.putUUID(KEY_PERIODIC_WAR_ID, periodicWarId);
         }
         return tag;
     }
@@ -211,9 +252,9 @@ public class WarSavedData extends SavedData {
                 loadRecruit(warId, recruit);
             }
         }
-        randomWarTimestamp = tag.getLong(KEY_RANDOM_WAR_TIMESTAMP);
-        if(tag.contains(KEY_RANDOM_WAR_ID)) {
-            randomWarId = tag.getUUID(KEY_RANDOM_WAR_ID);
+        periodicWarTimestamp = tag.getLong(KEY_PERIODIC_WAR_TIMESTAMP);
+        if(tag.contains(KEY_PERIODIC_WAR_ID)) {
+            periodicWarId = tag.getUUID(KEY_PERIODIC_WAR_ID);
         }
     }
 }

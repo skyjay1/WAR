@@ -33,7 +33,6 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -100,7 +99,7 @@ public final class WarCommands {
 
     private static int debugCommand(final CommandSourceStack context) {
         // TODO remove for release
-        WarUtils.reward(context.getServer(), context.getPlayer().getUUID(), true);
+        WarUtils.reward(context.getServer(), context.getPlayer().getUUID(), true, true);
         context.getPlayer().getInventory().add(WarUtils.makeWarCompass());
         return Command.SINGLE_SUCCESS;
     }
@@ -218,13 +217,27 @@ public final class WarCommands {
     }
 
     private static int invite(final CommandSourceStack context, final ServerPlayer target) throws CommandSyntaxException {
-        // determine current war
         final ServerPlayer player = context.getPlayerOrException();
-        final IWarMember playerWar = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
-        if(!playerWar.hasActiveWar()) {
+        final WarSavedData warData = WarSavedData.get(context.getServer());
+        // determine current war
+        UUID warId = null;
+        // load war recruit for this player
+        Optional<Pair<UUID, WarRecruitEntry>> oWarRecruit = warData.getRecruitForPlayer(player.getUUID());
+        if(oWarRecruit.isPresent() && oWarRecruit.get().getSecond().getState().isAccepted()) {
+            // war recruit for a war is accepted
+            warId = oWarRecruit.get().getFirst();
+        } else {
+            // no recruit exists, load capability
+            final IWarMember playerWar = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
+            if(playerWar.hasActiveWar()) {
+                // active war exists
+                warId = playerWar.getActiveWar();
+            }
+        }
+        // no war was found
+        if(null == warId) {
             throw PLAYER_SELF_IS_NOT_IN_WAR.create();
         }
-        final UUID warId = playerWar.getActiveWar();
         // load target data
         final IWarMember targetWar = target.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
         if(targetWar.hasActiveWar()) {
@@ -244,18 +257,16 @@ public final class WarCommands {
             context.sendFailure(MessageUtils.component("command.war.invite.failure.max_players", recruit.getMaxPlayers(), recruit.getMaxPlayers()));
             return 0;
         }
-        // check for existing recruit request
+        // check for pending or accepted recruit request
         final UUID targetId = target.getUUID();
-        for(WarRecruit r : data.getRecruits().values()) {
-            Optional<WarRecruitEntry> entry = r.getEntry(targetId);
-            if(entry.isPresent() && !entry.get().getState().isRejected()) {
-                context.sendFailure(MessageUtils.component("command.exception.player_has_pending_recruit", target.getDisplayName().getString()));
-                return 0;
-            }
+        Optional<Pair<UUID, WarRecruitEntry>> oTargetRecruit = warData.getRecruitForPlayer(targetId);
+        if(oTargetRecruit.isPresent() && !oTargetRecruit.get().getSecond().getState().isRejected()) {
+            context.sendFailure(MessageUtils.component("command.exception.player_has_pending_recruit", target.getDisplayName().getString()));
+            return 0;
         }
-        // add recruit request
+        // all checks passed
+        // create recruit request
         recruit.getInvitedPlayers().put(targetId, new WarRecruitEntry(context.getLevel().getGameTime()));
-        // save data
         data.setDirty();
         // send recruit message
         target.displayClientMessage(WarUtils.createRecruitComponent(), false);
@@ -402,6 +413,7 @@ public final class WarCommands {
             Optional<WarTeamEntry> oTeamEntry = team.getEntry(entry.getKey());
             final int deaths = oTeamEntry.isPresent() ? oTeamEntry.get().getDeathCount() : 0;
             // add number of deaths
+            message.getSiblings().add(Component.literal(" "));
             message.getSiblings().add(MessageUtils.component("command.war.list.team.deaths", deaths)
                     .withStyle(ChatFormatting.RED)
                     .withStyle(a -> a.withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, MessageUtils.component("command.war.list.team.deaths.tooltip", entry.getValue(), deaths)))));

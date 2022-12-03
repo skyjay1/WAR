@@ -32,7 +32,7 @@ public class ItemButton extends Button {
         // render selected background
         if(isHoveredOrFocused() || isSelected.test(this)) {
             int color = 0x88FFFFFF;
-            GuiComponent.fill(poseStack, this.x, this.y, this.x + this.width, this.y + this.height, color);
+            GuiComponent.fill(poseStack, this.x + 1, this.y + 1, this.x + this.width - 1, this.y + this.height - 1, color);
         }
         // render centered item
         int renderX = this.x + (this.width - 16) / 2;

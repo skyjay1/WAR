@@ -27,7 +27,6 @@ import net.minecraft.world.item.FireworkRocketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkHooks;
 import net.minecraftforge.server.ServerLifecycleHooks;
 import sswar.capability.IWarMember;
@@ -46,14 +45,11 @@ import sswar.war.team.WarTeams;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public final class WarUtils {
 
@@ -65,12 +61,13 @@ public final class WarUtils {
     public static final String TEAM_A_NAME = "Team A";
     public static final String TEAM_B_NAME = "Team B";
 
+    public static final String KEY_WAR_COMPASS = "WarCompass";
+    private static final String KEY_TARGET = "Target";
+    private static final String KEY_TARGET_FRIENDLY = "Friendly";
+
     private static final String KEY_BLOCK_ENTITY_TAG = "BlockEntityTag";
     private static final String KEY_LOOT_TABLE = "LootTable";
     private static final String VICTORY_LOOT_TABLE = new ResourceLocation(SSWar.MODID, "gameplay/war_victory").toString();
-    private static final String KEY_WAR_COMPASS = "WarCompass";
-    private static final String KEY_TARGET = "Target";
-    private static final String KEY_TARGET_FRIENDLY = "Friendly";
 
     /**
      * Selects a random player from the server, excluding players with the given UUIDs
@@ -180,18 +177,12 @@ public final class WarUtils {
         }
         final WarTeams teams = oTeams.get();
         // load player team
-        final Optional<WarTeam> oTeam = teams.getTeamForPlayer(player.getUUID());
+        final Optional<Pair<WarTeam, WarTeamEntry>> oTeam = teams.getTeamForPlayer(player.getUUID());
         if(oTeam.isEmpty()) {
             return;
         }
-        final WarTeam team = oTeam.get();
-        // load player entry
-        final Optional<WarTeamEntry> oEntry = team.getEntry(player.getUUID());
-        if(oEntry.isEmpty()) {
-            return;
-        }
         // add death count
-        oEntry.get().addDeath();
+        oTeam.get().getSecond().addDeath();
         teamData.setDirty();
     }
 
@@ -203,7 +194,7 @@ public final class WarUtils {
             if(war.hasOwner()) {
                 ServerPlayer owner = player.getServer().getPlayerList().getPlayer(war.getOwner());
                 if(owner != null) {
-                    owner.displayClientMessage(MessageUtils.component("command.war.accept.feedback", player.getDisplayName().getString())
+                    owner.displayClientMessage(MessageUtils.component("command.war.accept.success.feedback", player.getDisplayName().getString())
                             .withStyle(ChatFormatting.GREEN), false);
                 }
             }
@@ -217,7 +208,7 @@ public final class WarUtils {
             if(war.hasOwner()) {
                 ServerPlayer owner = player.getServer().getPlayerList().getPlayer(war.getOwner());
                 if(owner != null) {
-                    owner.displayClientMessage(MessageUtils.component("command.war.deny.feedback", player.getDisplayName().getString())
+                    owner.displayClientMessage(MessageUtils.component("command.war.deny.success.feedback", player.getDisplayName().getString())
                             .withStyle(ChatFormatting.RED), false);
                 }
             }
@@ -229,9 +220,10 @@ public final class WarUtils {
      * @param server the server
      * @param playerId the player
      * @param isWin true if the player wins
+     * @param hasReward true to give a loot item
      * @return true if the player was rewarded
      */
-    public static boolean reward(final MinecraftServer server, final UUID playerId, final boolean isWin) {
+    public static boolean reward(final MinecraftServer server, final UUID playerId, final boolean isWin, final boolean hasReward) {
         // load the player
         final ServerPlayer player = server.getPlayerList().getPlayer(playerId);
         if(null == player) {
@@ -243,13 +235,15 @@ public final class WarUtils {
             // add stats
             iWarMember.addWin();
             // create reward item
-            final ItemStack itemStack = Items.CHEST.getDefaultInstance();
-            CompoundTag blockEntityTag = new CompoundTag();
-            blockEntityTag.putString(KEY_LOOT_TABLE, VICTORY_LOOT_TABLE);
-            itemStack.getOrCreateTag().put(KEY_BLOCK_ENTITY_TAG, blockEntityTag);
-            itemStack.setHoverName(MessageUtils.component("item.sswar.victory_chest").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD));
-            if(!player.addItem(itemStack)) {
-                player.drop(itemStack, false);
+            if(hasReward) {
+                final ItemStack itemStack = Items.CHEST.getDefaultInstance();
+                CompoundTag blockEntityTag = new CompoundTag();
+                blockEntityTag.putString(KEY_LOOT_TABLE, VICTORY_LOOT_TABLE);
+                itemStack.getOrCreateTag().put(KEY_BLOCK_ENTITY_TAG, blockEntityTag);
+                itemStack.setHoverName(MessageUtils.component("item.sswar.victory_chest").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD));
+                if (!player.addItem(itemStack)) {
+                    player.drop(itemStack, false);
+                }
             }
             // add firework particles
             sendFireworks(player);
@@ -328,10 +322,10 @@ public final class WarUtils {
         List<UUID> playerList = new ArrayList<>();
         if(player.isShiftKeyDown()) {
             playerList.addAll(playerTeam.getTeam().keySet());
-            playerList.remove(player.getUUID());
         } else {
             playerList.addAll(enemyTeam.getTeam().keySet());
         }
+        playerList.remove(player.getUUID());
         // create list of online players
         final List<ServerPlayer> validPlayers = new ArrayList<>();
         for(UUID playerId : playerList) {
@@ -459,7 +453,7 @@ public final class WarUtils {
             compass.getTag().put("LodestoneDimension", new CompoundTag());
         }
         // update player status bar
-        final Component message = MessageUtils.component("item.sswar.war_compass.status_bar", target.getDisplayName().getString(), targetLevel.location().getPath(), (tracked ? targetPos.getY() : "-"));
+        final Component message = MessageUtils.component("item.sswar.war_compass.status_bar", target.getDisplayName().getString(), targetLevel.location().getPath(), targetPos.getY());
         player.displayClientMessage(message, true);
         // update lore text
         CompoundTag display = compass.getOrCreateTagElement("display");
@@ -468,6 +462,8 @@ public final class WarUtils {
             lore.remove(0);
         }
         lore.add(0, StringTag.valueOf(Component.Serializer.toJson(message)));
+        // cancel equip update when tag changes
+        // TODO
     }
 
     public static SimpleContainer createPlayerHeads(final ServerPlayer required, final List<ServerPlayer> validPlayers, final boolean showDeathCount) {
@@ -503,8 +499,25 @@ public final class WarUtils {
         }
         // write death count
         if(showDeathCount) {
-            IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
-            // TODO
+            final IWarMember iWarMember = player.getCapability(SSWar.WAR_MEMBER).orElse(WarMember.EMPTY);
+            // load active war
+            if(iWarMember.hasActiveWar()) {
+                final TeamSavedData data = TeamSavedData.get(player.getServer());
+                final Optional<WarTeams> oTeams = data.getTeams(iWarMember.getActiveWar());
+                // load team entry
+                if(oTeams.isPresent()) {
+                    final Optional<Pair<WarTeam, WarTeamEntry>> oTeam = oTeams.get().getTeamForPlayer(player.getUUID());
+                    if(oTeam.isPresent()) {
+                        // determine death count
+                        int deathCount = oTeam.get().getSecond().getDeathCount();
+                        // add lore to item stack
+                        CompoundTag displayTag = itemStack.getOrCreateTagElement("display");
+                        ListTag loreTag = new ListTag();
+                        loreTag.add(StringTag.valueOf(Component.Serializer.toJson(MessageUtils.component("command.war.list.team.deaths.tooltip_short", deathCount))));
+                        displayTag.put("Lore", loreTag);
+                    }
+                }
+            }
         }
         return itemStack;
     }

@@ -19,6 +19,8 @@ import java.util.UUID;
 
 public class WarRecruit implements INBTSerializable<CompoundTag> {
 
+    public static final WarRecruit EMPTY = new WarRecruit(0);
+
     private Map<UUID, WarRecruitEntry> invitedPlayers = new HashMap<>();
     private int maxPlayers;
 
@@ -53,7 +55,7 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
     }
 
     /**
-     * Adds all of the players to this war recruit and sends a recruit message
+     * Adds all of the given players to this war recruit and sends a recruit message
      * @param server the server
      * @param warData the war saved data
      * @param war the war instance
@@ -68,7 +70,7 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
                 // owner cannot change their state
                 if(war.hasOwner() && uuid.equals(war.getOwner())) {
                     entry.setState(WarRecruitState.ACCEPT);
-                    entry.setCanChange(false);
+                    entry.setLocked(true);
                     continue;
                 }
                 ServerPlayer player = server.getPlayerList().getPlayer(uuid);
@@ -87,7 +89,7 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
      */
     public boolean accept(final UUID player) {
         WarRecruitEntry entry = invitedPlayers.get(player);
-        if(entry != null && entry.canChange() && !isFull()) {
+        if(entry != null && !entry.isLocked() && !isFull()) {
             entry.setState(WarRecruitState.ACCEPT);
             return true;
         }
@@ -101,7 +103,7 @@ public class WarRecruit implements INBTSerializable<CompoundTag> {
      */
     public boolean deny(final UUID player) {
         WarRecruitEntry entry = invitedPlayers.get(player);
-        if(entry != null && entry.canChange()) {
+        if(entry != null && !entry.isLocked()) {
             entry.setState(WarRecruitState.DENY);
             return true;
         }

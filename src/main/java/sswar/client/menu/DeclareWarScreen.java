@@ -40,7 +40,7 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
     private static final int TEAM_B_X = 151;
     private static final int TEAM_B_Y = TEAM_A_Y;
 
-    private static final int DONE_BUTTON_HEIGHT = 18;
+    private static final int DONE_BUTTON_HEIGHT = 20;
 
     protected int leftPos;
     protected int topPos;
@@ -59,6 +59,7 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
     private ItemButton selectedButton;
 
     private Button buttonCustomize;
+    private Button buttonDone;
     private ImageTextButton buttonCount;
     private ImageIconButton buttonSwap;
     private ImageIconButton buttonRemove;
@@ -224,7 +225,7 @@ public class DeclareWarScreen extends Screen implements MenuAccess<DeclareWarMen
         this.buttonRandomize.setEnabled(totalPlayerCount > 0);
         this.buttonSwap.visible = this.buttonRemove.visible = this.buttonRandomize.visible = !isSimple;
         // add Done button
-        this.addRenderableWidget(new Button(this.leftPos, this.topPos + IMAGE_HEIGHT, IMAGE_WIDTH, DONE_BUTTON_HEIGHT, getTitle(), b -> {
+        this.buttonDone = this.addRenderableWidget(new Button(this.leftPos, this.topPos + IMAGE_HEIGHT + 2, IMAGE_WIDTH, DONE_BUTTON_HEIGHT, getTitle(), b -> {
             if(getCount() > 1) {
                 // update text fields
                 getMenu().setWarName(validPlayerButtons.getEditBox().getValue());

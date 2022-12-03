@@ -54,7 +54,7 @@ public class WarCompassScreen extends Screen implements MenuAccess<WarCompassMen
         this.topPos = (this.height - IMAGE_HEIGHT) / 2;
         // create button holder for valid players
         validPlayerButtons = this.addWidget(new ItemButtonHolder(this, menu.getValidPlayers(), this.leftPos + VALID_PLAYERS_X, this.topPos + VALID_PLAYERS_Y,
-                12, 4, 120, Component.empty(), b -> {
+                9, 4, 120, Component.empty(), b -> {
             int slot = b.getSlot();
             if(slot >= 0) {
                 getMenu().sendPacketToServer(slot);

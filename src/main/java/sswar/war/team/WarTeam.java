@@ -158,6 +158,6 @@ public class WarTeam implements Iterable<UUID>, INBTSerializable<CompoundTag> {
     @NotNull
     @Override
     public Iterator<UUID> iterator() {
-        return ImmutableSet.copyOf(team.keySet()).iterator();
+        return team.keySet().iterator();
     }
 }

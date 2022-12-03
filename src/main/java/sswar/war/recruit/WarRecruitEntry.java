@@ -12,7 +12,7 @@ public class WarRecruitEntry implements INBTSerializable<CompoundTag> {
 
     private long timestamp;
     private WarRecruitState state;
-    private boolean canChange;
+    private boolean locked;
 
     //// CONSTRUCTORS ////
 
@@ -45,26 +45,26 @@ public class WarRecruitEntry implements INBTSerializable<CompoundTag> {
         this.state = state;
     }
 
-    public boolean canChange() {
-        return canChange;
+    public boolean isLocked() {
+        return locked;
     }
 
-    public void setCanChange(boolean canChange) {
-        this.canChange = canChange;
+    public void setLocked(boolean locked) {
+        this.locked = locked;
     }
 
     //// NBT ////
 
     private static final String KEY_TIMESTAMP = "Timestamp";
     private static final String KEY_STATE = "State";
-    private static final String KEY_CAN_CHANGE = "CanChange";
+    private static final String KEY_LOCKED = "Locked";
 
     @Override
     public CompoundTag serializeNBT() {
         CompoundTag tag = new CompoundTag();
         tag.putLong(KEY_TIMESTAMP, timestamp);
         tag.putByte(KEY_STATE, state.getId());
-        tag.putBoolean(KEY_CAN_CHANGE, canChange);
+        tag.putBoolean(KEY_LOCKED, locked);
         return tag;
     }
 
@@ -72,7 +72,7 @@ public class WarRecruitEntry implements INBTSerializable<CompoundTag> {
     public void deserializeNBT(CompoundTag tag) {
         timestamp = tag.getLong(KEY_TIMESTAMP);
         state = WarRecruitState.getById(tag.getByte(KEY_STATE));
-        canChange = tag.getBoolean(KEY_CAN_CHANGE);
+        locked = tag.getBoolean(KEY_LOCKED);
     }
 
     //// EQUALITY ////
@@ -82,11 +82,11 @@ public class WarRecruitEntry implements INBTSerializable<CompoundTag> {
         if (this == o) return true;
         if (!(o instanceof WarRecruitEntry)) return false;
         WarRecruitEntry that = (WarRecruitEntry) o;
-        return timestamp == that.timestamp && state == that.state && canChange == that.canChange;
+        return timestamp == that.timestamp && state == that.state && locked == that.locked;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(timestamp, state, canChange);
+        return Objects.hash(timestamp, state, locked);
     }
 }
